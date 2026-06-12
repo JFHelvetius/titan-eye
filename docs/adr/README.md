@@ -34,14 +34,15 @@ tomada** (ADR-0000, P6).
 | [0010](0010-orbital-sgp4-v01.md) | Dominio orbital — TLE + propagación SGP4 v0.1 | Aceptado |
 | [0011](0011-suborbital-ballistic-v01.md) | Dominio suborbital — reconstrucción balística v0.1 | Aceptado |
 | [0012](0012-surface-conflict-heatmap-v01.md) | Dominio superficie — eventos de conflicto y mapa de calor v0.1 | Aceptado |
+| [0013](0013-situation-case-v01.md) | Caso de situación portable y verificable v0.1 | Aceptado |
 
 ## Planificados (no escritos aún)
 
 | ADR | Título tentativo |
 |-----|------------------|
-| 0013 | Gestión de secretos (tokens OpenSky, ACLED API en vivo) |
-| 0014 | Reproducibilidad bajo entorno declarado |
-| 0015 | Cierre formal de fases / contrato congelado |
+| 0014 | Gestión de secretos (tokens OpenSky, ACLED API en vivo) |
+| 0015 | Reproducibilidad bajo entorno declarado |
+| 0016 | Cierre formal de fases / contrato congelado |
 
 > Nota de numeración: 0009 (aéreo) se aceptó antes que 0008 (storage). Los
 > números reflejan orden de aceptación, no de dependencia; no se reordenan.

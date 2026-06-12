@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import json
 import sys
+from datetime import UTC
 from typing import Any
 
 from titan_eye.catalog.normalizers.opensky_states import (
@@ -134,6 +135,18 @@ def build_parser() -> argparse.ArgumentParser:
         pv.add_argument("--data-root", required=True, help="Raíz de datos local a verificar.")
         pv.add_argument("--no-reproducibility", action="store_true",
                         help="Omite la comprobación I2 (reproducibilidad).")
+
+    p_build = sub.add_parser("build-case",
+                             help="Ensambla un caso de situación portable y auditable por hash")
+    p_build.add_argument("--data-root", required=True, help="Raíz de datos persistida.")
+    p_build.add_argument("--title", default="Caso de situación Titan Eye", help="Título del caso.")
+    p_build.add_argument("--case-id", default=None,
+                         help="ID del caso (por defecto: derivado de la fecha).")
+    p_build.add_argument("--out", required=True, help="Ruta de salida del caso JSON.")
+
+    p_vcase = sub.add_parser("verify-case",
+                             help="Verifica la auto-consistencia de un caso de situación por hash")
+    p_vcase.add_argument("--case", required=True, help="Fichero JSON del caso.")
     return parser
 
 
@@ -157,6 +170,10 @@ def cli_entry_point(argv: list[str] | None = None) -> int:
             return _cmd_reconstruct_ballistic(args)
         if args.command in ("verify-aerial", "verify-orbital", "verify-surface"):
             return _cmd_verify(args, domain=args.command.split("-", 1)[1])
+        if args.command == "build-case":
+            return _cmd_build_case(args)
+        if args.command == "verify-case":
+            return _cmd_verify_case(args)
         parser.error("comando no reconocido")
         return 2
     except TitanEyeError as exc:
@@ -376,6 +393,82 @@ def _cmd_reconstruct_ballistic(args: argparse.Namespace) -> int:
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
+
+
+def _collect_refs_from_root(root) -> list:
+    """Lee las detecciones persistidas en el data-root y produce DetectionRefs."""
+    from pathlib import Path
+
+    from titan_eye.catalog.aircraft_states_repo import AircraftStatesRepository
+    from titan_eye.catalog.ballistic_repo import BallisticTrajectoryRepository
+    from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
+    from titan_eye.catalog.orbital_elements_repo import OrbitalElementsRepository
+    from titan_eye.core.domains import Domain
+    from titan_eye.provenance.situation_case import DetectionRef
+
+    root = Path(root)
+    norm = root / "normalized"
+    refs: list = []
+    specs = [
+        (Domain.AERIAL, "opensky.states", AircraftStatesRepository(norm / "aerial")),
+        (Domain.ORBITAL, "celestrak.gp", OrbitalElementsRepository(norm / "orbital")),
+        (Domain.SURFACE, "conflict.events", ConflictEventsRepository(norm / "surface")),
+        (Domain.SUBORBITAL, "ballistic.report",
+         BallisticTrajectoryRepository(root / "derived" / "ballistic")),
+    ]
+    for domain, source_id, repo in specs:
+        for det in repo.iter_all():
+            refs.append(DetectionRef(
+                domain=domain, source_id=source_id,
+                content_hash_source=det.content_hash_source,
+                epistemic_label=det.epistemic_label,
+                canonical=det.model_dump(mode="json"),
+            ))
+    return refs
+
+
+def _cmd_build_case(args: argparse.Namespace) -> int:
+    from datetime import datetime
+    from pathlib import Path
+
+    from titan_eye.provenance.situation_case import build_situation_case
+
+    refs = _collect_refs_from_root(args.data_root)
+    if not refs:
+        raise TitanEyeError(
+            f"No hay detecciones persistidas en {args.data_root} (¿usaste --persist?)"
+        )
+    created_at = datetime.now(UTC)
+    case_id = args.case_id or f"case_{created_at.strftime('%Y%m%dT%H%M%SZ')}"
+    case = build_situation_case(case_id=case_id, title=args.title, created_at=created_at, refs=refs)
+    Path(args.out).write_text(case.model_dump_json(indent=2), encoding="utf-8")
+    print(json.dumps({
+        "case_id": case.case_id,
+        "case_hash": case.case_hash,
+        "n_entries": len(case.entries),
+        "domains": sorted({e.domain.value for e in case.entries}),
+        "out": str(args.out),
+    }, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_verify_case(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from titan_eye.provenance.situation_case import SituationCase, verify_situation_case
+
+    # utf-8-sig tolera un BOM opcional (editores Windows lo añaden).
+    case = SituationCase.model_validate_json(Path(args.case).read_text(encoding="utf-8-sig"))
+    rep = verify_situation_case(case)
+    print(json.dumps({
+        "case_id": rep.case_id,
+        "ok": rep.ok,
+        "case_hash": rep.expected_hash,
+        "recomputed_hash": rep.actual_hash,
+        "n_entries": rep.n_entries,
+        "issues": rep.issues,
+    }, indent=2, ensure_ascii=False))
+    return 0 if rep.ok else 1
 
 
 def _cmd_verify(args: argparse.Namespace, *, domain: str) -> int:

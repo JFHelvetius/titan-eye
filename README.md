@@ -98,8 +98,20 @@ que combina los cuatro dominios sobre un único globo táctico Cesium, con KPIs,
 tablas por dominio etiquetadas por epistemología, y una pestaña de verificación de
 procedencia (I1/I2). Cada panel declara la naturaleza del dato y su incertidumbre.
 
-Siguiente: endurecer la honestidad gráfica (tubos de error 3D) y la API portable de
-"caso de situación" auditable por hash. Ver el [roadmap por fases](docs/architecture/roadmap.md).
+## Caso de situación auditable por cualquiera
+
+Como Orbital Sentinel emite un `InvestigationCase`, Titan Eye empaqueta una
+instantánea situacional en un **`SituationCase`** portable, atado por hash a los
+bytes públicos que lo originaron (ADR-0013). Cualquier tercero puede recomputar el
+hash y detectar manipulación, sin acceso a tu base de datos ni asimetría
+productor/revisor:
+
+```bash
+titan-eye build-case  --data-root ./data --out caso.json   # ensambla el caso
+titan-eye verify-case --case caso.json                     # ok=true si no fue alterado
+```
+
+Ver el [roadmap por fases](docs/architecture/roadmap.md).
 
 ## El globo
 

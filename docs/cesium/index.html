@@ -338,16 +338,25 @@
         if (s.arc && s.arc.length > 1) {
           const pos3d = []; const ground = [];
           s.arc.forEach(p => { pos3d.push(p[0], p[1], (p[2] || 0) * 1000); ground.push(p[0], p[1]); });
+          const arcPositions = Cesium.Cartesian3.fromDegreesArrayHeights(pos3d);
           // Corredor de incertidumbre proyectado en superficie (banda visible)
           viewer.entities.add({ corridor: {
             positions: Cesium.Cartesian3.fromDegreesArray(ground),
             width: Math.max(8000, (s.band_km || 25) * 2000),
-            material: COL.hostile.withAlpha(.14), cornerType: Cesium.CornerType.ROUNDED,
+            material: COL.hostile.withAlpha(.10), cornerType: Cesium.CornerType.ROUNDED,
           } });
-          // Arco 3D como glow ancho (no fino) — sigue siendo "banda", no línea
+          // TUBO DE ERROR 3D verdadero (ADR-0004): sección circular de radio = banda
+          // de incertidumbre declarada. La línea fina está prohibida para un inferred.
+          viewer.entities.add({ polylineVolume: {
+            positions: arcPositions,
+            shape: errorTubeShape((s.band_km || 25) * 1000),
+            material: COL.hostile.withAlpha(.16),
+            outline: true, outlineColor: COL.hostile.withAlpha(.35),
+          } });
+          // Eje del tubo como glow (referencia central dentro de la banda)
           viewer.entities.add({ polyline: {
-            positions: Cesium.Cartesian3.fromDegreesArrayHeights(pos3d), width: 6,
-            material: new Cesium.PolylineGlowMaterialProperty({ color: COL.hostile.withAlpha(.85), glowPower: .3 }),
+            positions: arcPositions, width: 3,
+            material: new Cesium.PolylineGlowMaterialProperty({ color: COL.hostile.withAlpha(.9), glowPower: .25 }),
           } });
         }
         // Marcadores de lanzamiento e impacto estimado
@@ -415,6 +424,17 @@
       viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lon, lat, 0), ellipse: {
         semiMajorAxis: radius, semiMinorAxis: radius, material: color.withAlpha(.05),
         outline: true, outlineColor: color.withAlpha(.5), outlineWidth: 1, height: 0 } });
+    }
+    // Sección circular (Cartesian2) para el tubo de error 3D de los inferred.
+    function errorTubeShape(radiusMeters, n) {
+      n = n || 16;
+      const r = Math.max(2000, radiusMeters);  // mínimo visible
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * 2 * Math.PI;
+        pts.push(new Cesium.Cartesian2(r * Math.cos(a), r * Math.sin(a)));
+      }
+      return pts;
     }
     function addMarker(lon, lat, color, glyph) {
       viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),

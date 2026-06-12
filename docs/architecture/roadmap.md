@@ -84,9 +84,9 @@ ADR-0012. El cuarto y último dominio; enciende el mapa de calor.
 ## Fase 5 — Dashboard de situación integrado  *(en curso)*
 
 - [x] **Panel de situación Streamlit** (`app/streamlit_app.py`): combina los cuatro dominios sobre un único globo Cesium, con sidebar de control por dominio, KPIs, tablas por dominio etiquetadas por epistemología, y pestaña de verificación de procedencia (I1/I2). Es la culminación del proyecto (como Orbital Sentinel acaba en Streamlit).
-- [ ] Endurecimiento de la honestidad gráfica (tubos de error 3D verdaderos para todos los `inferred`).
-- [ ] Exportable: un "caso de situación" portable y auditable por hash (análogo al `InvestigationCase` de Orbital Sentinel).
-- [ ] Proximidad geométrica multidominio **con incertidumbre**, sin veredictos.
+- [x] **Caso de situación portable y verificable** (ADR-0013): `SituationCase` con `case_hash` content-addressable, digest invariante al orden, verificación de auto-consistencia y detección de manipulación. CLI `build-case` / `verify-case`. Validado: caso limpio ok=true, caso manipulado detectado. Análogo del `InvestigationCase` de Orbital Sentinel.
+- [x] **Tubos de error 3D** para los `inferred` en el globo (`polylineVolume` de sección ∝ `band_km`): la línea fina queda definitivamente prohibida (ADR-0004).
+- [ ] Proximidad geométrica multidominio **con incertidumbre**, sin veredictos. *(pendiente)*
 
 **Invariante de cierre:** ningún panel del dashboard emite scores de amenaza ni
 clasificación de intención. Lo que muestra es geometría, conteos y procedencia.
