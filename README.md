@@ -1,7 +1,10 @@
 # Titan Eye
 
+[![ci](https://github.com/JFHelvetius/titan-eye/actions/workflows/ci.yml/badge.svg)](https://github.com/JFHelvetius/titan-eye/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![status](https://img.shields.io/badge/status-fundación-orange.svg)](docs/adr/0000-long-term-vision.md)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![tests](https://img.shields.io/badge/tests-97%20passing-brightgreen.svg)](tests/)
+[![ADRs](https://img.shields.io/badge/ADRs-14-informational.svg)](docs/adr/)
 
 **Infraestructura verificable para afirmaciones sobre actividad militar observable con datos públicos.**
 

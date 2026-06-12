@@ -263,6 +263,34 @@ def _page_situation() -> None:
     st.caption("Epistemología (P9): observed = punto nítido + error nominal · asserted = halo según "
                "resolución de geoloc · inferred = banda de incertidumbre (línea fina prohibida).")
     _domain_tables(payload)
+    _proximity_panel(payload)
+
+
+def _proximity_panel(payload: dict) -> None:
+    """Proximidad geométrica multidominio (ADR-0014): geometría con error, sin veredictos."""
+    from titan_eye.analytics.proximity import entities_from_payload, find_proximities
+
+    ents = entities_from_payload(payload)
+    if len(ents) < 2:
+        return
+    with st.expander("📐 Proximidad geométrica multidominio", expanded=False):
+        thr = st.slider("Umbral de distancia horizontal (km)", 5, 500, 100, 5)
+        try:
+            evs = find_proximities(ents, horizontal_threshold_km=float(thr))
+        except Exception as exc:
+            st.error(f"{type(exc).__name__}: {exc}")
+            return
+        if not evs:
+            st.caption("Sin pares por debajo del umbral.")
+            return
+        st.dataframe([{
+            "A": f"{e.a_domain.value}:{e.a_id}", "B": f"{e.b_domain.value}:{e.b_id}",
+            "horiz_km": e.horizontal_distance_km, "vert_km": e.vertical_separation_km,
+            "± incert_km": e.combined_uncertainty_km, "epistemología": e.weakest_epistemic.value,
+        } for e in evs[:200]], use_container_width=True, hide_index=True)
+        st.caption("Distancia horizontal y separación vertical **por separado**, con incertidumbre "
+                   "combinada. Es **geometría con error, no un veredicto**: no implica intención, "
+                   "amenaza ni riesgo de intercepción (ADR-0003/0014).")
 
 
 def _page_verify() -> None:

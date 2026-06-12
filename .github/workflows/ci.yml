@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: ruff + pytest (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install (dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,app]"
+
+      - name: Ruff (lint, gate obligatorio)
+        run: ruff check src app tests
+
+      - name: Pytest (suite sin red, gate obligatorio)
+        run: pytest -q
+
+  typecheck:
+    name: mypy strict (informativo, no bloqueante)
+    runs-on: ubuntu-latest
+    continue-on-error: true   # deuda declarada: el código aún no es strict-clean
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - run: mypy src

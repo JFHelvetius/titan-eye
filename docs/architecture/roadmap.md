@@ -81,15 +81,28 @@ ADR-0012. El cuarto y último dominio; enciende el mapa de calor.
 
 **Matemática:** KDE Gaussiano con bandwidth explícito; sin confundir cobertura con realidad (ADR-0003). 80 tests verdes.
 
-## Fase 5 — Dashboard de situación integrado  *(en curso)*
+## Fase 5 — Dashboard de situación integrado  *(CERRADA)*
 
 - [x] **Panel de situación Streamlit** (`app/streamlit_app.py`): combina los cuatro dominios sobre un único globo Cesium, con sidebar de control por dominio, KPIs, tablas por dominio etiquetadas por epistemología, y pestaña de verificación de procedencia (I1/I2). Es la culminación del proyecto (como Orbital Sentinel acaba en Streamlit).
 - [x] **Caso de situación portable y verificable** (ADR-0013): `SituationCase` con `case_hash` content-addressable, digest invariante al orden, verificación de auto-consistencia y detección de manipulación. CLI `build-case` / `verify-case`. Validado: caso limpio ok=true, caso manipulado detectado. Análogo del `InvestigationCase` de Orbital Sentinel.
 - [x] **Tubos de error 3D** para los `inferred` en el globo (`polylineVolume` de sección ∝ `band_km`): la línea fina queda definitivamente prohibida (ADR-0004).
-- [ ] Proximidad geométrica multidominio **con incertidumbre**, sin veredictos. *(pendiente)*
+- [x] **Proximidad geométrica multidominio con incertidumbre, sin veredictos** (ADR-0014): `find_proximities` reporta distancia horizontal y separación vertical por separado, incertidumbre combinada y etiqueta epistémica más débil. Panel en el dashboard. **Sin scores de amenaza ni veredictos de intención** — geometría con error, como las conjunciones de Orbital Sentinel.
 
-**Invariante de cierre:** ningún panel del dashboard emite scores de amenaza ni
-clasificación de intención. Lo que muestra es geometría, conteos y procedencia.
+**Invariante de cierre cumplido:** ningún panel del dashboard emite scores de
+amenaza ni clasificación de intención. Lo que muestra es geometría, conteos y
+procedencia. **Las cinco fases tienen núcleo operativo, 97 tests verdes.**
+
+---
+
+## Estado del proyecto
+
+Las cinco fases del roadmap tienen su núcleo cerrado: los cuatro dominios
+(`observed`/`asserted`/`inferred`), la cadena de procedencia con verificadores de
+integridad, el caso de situación auditable por hash, y el dashboard de situación.
+Lo que queda son **profundizaciones declaradas, no fases nuevas**: APIs en vivo con
+clave (ADR-0015 secretos), reproducibilidad bajo entorno declarado formalizada
+(ADR-0016), y el cierre formal con contrato congelado (ADR-0017), análogo al
+contrato criptográfico v1.0.0 de Orbital Sentinel.
 
 ---
 
