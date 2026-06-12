@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Titan Eye · Globo táctico multidominio</title>
+  <script>
+    window.CESIUM_BASE_URL = 'https://unpkg.com/cesium@1.119.0/Build/Cesium/';
+  </script>
+  <link rel="stylesheet" href="https://unpkg.com/cesium@1.119.0/Build/Cesium/Widgets/widgets.css">
+  <script src="https://unpkg.com/cesium@1.119.0/Build/Cesium/Cesium.js"></script>
+  <style>
+    /* ── Tema "tactical" — distinto del azul de Orbital Sentinel ────────
+       charcoal casi negro + ámbar táctico, rojo hostil, verde neutro.    */
+    :root {
+      --bg: #080b10;
+      --amber: #d98a2b;       /* acento primario */
+      --amber-soft: #e8a33d;
+      --hostile: #e63946;     /* suborbital inferred / eventos */
+      --aircraft: #f0b429;    /* aéreo observed */
+      --sat: #38bdf8;         /* orbital observed */
+      --surface: #ef5d4c;     /* superficie asserted */
+      --neutral: #5b6b7a;
+      --text: #e6e9ef;
+    }
+    html, body, #cesiumContainer {
+      width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    .cesium-viewer-bottom { display: none !important; }
+    .cesium-viewer-toolbar { top: 10px !important; right: 10px !important; }
+    .cesium-button {
+      background: rgba(18,22,30,.94) !important;
+      border: 1px solid rgba(217,138,43,.35) !important;
+      color: var(--amber-soft) !important;
+    }
+    .cesium-button:hover { background: rgba(217,138,43,.25) !important; }
+    .cesium-baseLayerPicker-dropDown {
+      background: rgba(12,15,21,.98) !important;
+      border: 1px solid rgba(217,138,43,.35) !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,.7);
+      max-height: 540px !important; width: 320px !important; padding: 8px !important;
+    }
+    .cesium-baseLayerPicker-sectionTitle {
+      color: var(--amber-soft) !important; font-size: 11px !important;
+      letter-spacing: .08em !important; text-transform: uppercase !important;
+      font-weight: 600 !important; margin: 8px 4px 4px !important;
+    }
+    .cesium-baseLayerPicker-item {
+      background: rgba(26,32,42,.55) !important;
+      border: 1px solid rgba(217,138,43,.15) !important;
+      border-radius: 6px !important; margin: 4px !important; padding: 4px !important;
+      cursor: pointer !important;
+    }
+    .cesium-baseLayerPicker-item:hover {
+      background: rgba(217,138,43,.18) !important;
+      border-color: rgba(217,138,43,.5) !important;
+    }
+    .cesium-baseLayerPicker-selectedItem {
+      background: rgba(217,138,43,.28) !important;
+      border-color: rgba(217,138,43,.7) !important;
+    }
+    .cesium-baseLayerPicker-itemLabel { color: var(--text) !important; font-size: 12px !important; margin-left: 6px !important; }
+    .cesium-baseLayerPicker-itemIcon {
+      width: 48px !important; height: 48px !important; border-radius: 4px !important;
+      object-fit: cover !important; border: 1px solid rgba(217,138,43,.3) !important;
+    }
+    .hud {
+      position: absolute; top: 12px; left: 14px; z-index: 999;
+      color: var(--text); padding: 10px 14px;
+      background: rgba(12,16,23,.78);
+      border: 1px solid rgba(217,138,43,.3);
+      border-radius: 8px; backdrop-filter: blur(8px);
+      pointer-events: auto; min-width: 248px;
+    }
+    .hud .title { font-size: 13px; font-weight: 700; letter-spacing: .04em; }
+    .hud .sub { font-size: 10px; color: var(--amber-soft); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+    .hud .counts { font-size: 10px; color: rgba(200,210,225,.75); margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
+    .hud .lyr-panel {
+      margin-top: 10px; padding-top: 10px;
+      border-top: 1px solid rgba(217,138,43,.22);
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .hud .lyr-panel .lp-title {
+      font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+      color: rgba(190,200,220,.7); margin: 6px 0 2px;
+    }
+    .hud .lyr-panel label {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--text); cursor: pointer; user-select: none;
+    }
+    .hud .lyr-panel label:hover { color: var(--amber-soft); }
+    .hud .lyr-panel input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--amber); cursor: pointer; }
+    .hud .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .legend {
+      position: absolute; bottom: 14px; left: 14px; z-index: 999;
+      color: var(--text); padding: 9px 12px; font-size: 11px;
+      background: rgba(12,16,23,.78); border: 1px solid rgba(217,138,43,.25);
+      border-radius: 8px; backdrop-filter: blur(8px); line-height: 1.7;
+    }
+    .legend .ep { color: rgba(190,200,220,.7); font-size: 10px; }
+    /* Timeline + animación — tono tactical */
+    .cesium-viewer-timelineContainer { background: rgba(12,16,23,.92) !important; border-top: 1px solid rgba(217,138,43,.25) !important; }
+    .cesium-viewer-animationContainer { background: rgba(12,16,23,.92) !important; }
+    .cesium-animation-svgText { fill: var(--amber-soft) !important; }
+    .cesium-animation-themeNormal { fill: #1a1f29 !important; }
+    .cesium-animation-themeHover { fill: #2a3140 !important; }
+    .cesium-animation-themeSelect { fill: var(--amber) !important; }
+    .cesium-timeline-bar { background: rgba(12,16,23,.85) !important; }
+    .loading {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      color: var(--amber-soft); font-size: 14px; padding: 12px 18px;
+      background: rgba(12,16,23,.85); border: 1px solid rgba(217,138,43,.3);
+      border-radius: 6px; z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"><div class="loading" id="loadingMsg">Cargando Titan Eye…</div></div>
+
+  <div class="hud">
+    <div class="title">🛰 TITAN EYE · Globo táctico</div>
+    <div class="sub" id="hudSub">Esperando datos…</div>
+    <div class="counts" id="hudCounts"></div>
+    <div class="lyr-panel">
+      <div class="lp-title">Capas de dominio</div>
+      <label><input type="checkbox" id="lyr-orbital" checked><span class="dot" style="background:var(--sat)"></span> Satélites (orbital)</label>
+      <label><input type="checkbox" id="lyr-aerial" checked><span class="dot" style="background:var(--aircraft)"></span> Aeronaves (aéreo)</label>
+      <label><input type="checkbox" id="lyr-suborbital" checked><span class="dot" style="background:var(--hostile)"></span> Trayectorias balísticas</label>
+      <label><input type="checkbox" id="lyr-surface" checked><span class="dot" style="background:var(--surface)"></span> Eventos de conflicto</label>
+      <label><input type="checkbox" id="lyr-heatmap"><span class="dot" style="background:#b91c1c"></span> Mapa de calor (reportes)</label>
+      <div class="lp-title">Geometría y base</div>
+      <label><input type="checkbox" id="lyr-range"> Anillos de alcance / horizonte</label>
+      <label><input type="checkbox" id="lyr-labels"> Etiquetas (fronteras, ciudades)</label>
+      <label><input type="checkbox" id="lyr-atmosphere" checked> Atmósfera</label>
+      <label><input type="checkbox" id="lyr-lighting"> Iluminación día/noche</label>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div><b>Epistemología</b> <span class="ep">(ADR-0003 · P9)</span></div>
+    <div><span class="dot" style="background:var(--sat)"></span> observado · punto nítido + error nominal</div>
+    <div><span class="dot" style="background:var(--surface)"></span> afirmado · halo = resolución de geoloc.</div>
+    <div><span class="dot" style="background:var(--hostile)"></span> inferido · banda de incertidumbre (no línea fina)</div>
+  </div>
+
+  <script>
+    // ── Providers públicos sin token ─────────────────────────────────
+    function url(u, credit, max) { return new Cesium.UrlTemplateImageryProvider({ url: u, credit: credit, maximumLevel: max || 19 }); }
+    function esriImagery() { return url('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 'Esri · Maxar · USGS', 19); }
+    function esriImageryWithLabels() {
+      return [esriImagery(), url('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', 'Esri Reference', 19)];
+    }
+    function esriTopo() { return url('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', 'Esri Topo', 19); }
+    function esriOcean() { return url('https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}', 'Esri Ocean', 13); }
+    function esriDarkGray() { return url('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', 'Esri Dark Gray', 16); }
+    function osm() { return new Cesium.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/', credit: '© OpenStreetMap' }); }
+    function nasaBlueMarble() {
+      return new Cesium.UrlTemplateImageryProvider({
+        url: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief_Bathymetry/default/EPSG3857_500m/{z}/{y}/{x}.jpeg',
+        credit: 'NASA Earth Observatory — Blue Marble',
+        tilingScheme: new Cesium.WebMercatorTilingScheme(), maximumLevel: 8,
+      });
+    }
+
+    function makeIcon(style) {
+      const c = document.createElement('canvas'); c.width = c.height = 64;
+      const ctx = c.getContext('2d');
+      ctx.save(); ctx.beginPath(); ctx.arc(32, 32, 30, 0, Math.PI * 2); ctx.clip();
+      if (style.bg) {
+        const g = ctx.createRadialGradient(28, 22, 4, 32, 32, 34);
+        for (let i = 0; i < style.bg.length; i++) g.addColorStop(i / (style.bg.length - 1), style.bg[i]);
+        ctx.fillStyle = g;
+      } else ctx.fillStyle = '#1a1f29';
+      ctx.fillRect(0, 0, 64, 64);
+      for (const s of (style.shapes || [])) {
+        ctx.fillStyle = s.color;
+        if (s.type === 'blob') { ctx.beginPath(); ctx.ellipse(s.x, s.y, s.rx, s.ry, 0, 0, Math.PI * 2); ctx.fill(); }
+        else if (s.type === 'lines') {
+          ctx.strokeStyle = s.color; ctx.lineWidth = s.w || 0.7;
+          for (const [a, b, d, e] of s.lines) { ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(d, e); ctx.stroke(); }
+        }
+      }
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(217,138,43,.5)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(32, 32, 30, 0, Math.PI * 2); ctx.stroke();
+      return c.toDataURL('image/png');
+    }
+    const ICONS = {
+      esri: makeIcon({ bg: ['#5a7a4e', '#3c5a78', '#0a2849'], shapes: [
+        {type:'blob', color:'rgba(120,140,80,.85)', x:20, y:24, rx:11, ry:8},
+        {type:'blob', color:'rgba(120,140,80,.85)', x:42, y:36, rx:14, ry:10}] }),
+      esriLbl: makeIcon({ bg: ['#5a7a4e', '#3c5a78', '#0a2849'], shapes: [
+        {type:'blob', color:'rgba(120,140,80,.85)', x:20, y:24, rx:11, ry:8},
+        {type:'lines', color:'rgba(255,255,255,.5)', w:0.6, lines:[[12,32,52,32],[32,12,32,52]]}] }),
+      dark: makeIcon({ bg: ['#2a2f38', '#15181f', '#06080c'], shapes: [
+        {type:'lines', color:'rgba(217,138,43,.4)', w:0.6, lines:[[8,22,56,22],[8,42,56,42],[20,8,20,56],[44,8,44,56]]}] }),
+      blue: makeIcon({ bg: ['#2c5da5', '#143868', '#031026'], shapes: [
+        {type:'blob', color:'rgba(110,150,90,.92)', x:20, y:25, rx:11, ry:9},
+        {type:'blob', color:'rgba(240,245,255,.5)', x:32, y:12, rx:14, ry:4}] }),
+      topo: makeIcon({ bg: ['#c8b78a', '#9a8855', '#5a4a28'], shapes: [
+        {type:'lines', color:'rgba(80,60,30,.6)', w:0.8, lines:[[10,30,30,28],[28,28,48,32],[14,40,38,42]]}] }),
+      ocean: makeIcon({ bg: ['#3470a0', '#1a4878', '#0a2050'], shapes: [
+        {type:'lines', color:'rgba(180,210,240,.4)', w:0.6, lines:[[8,22,56,22],[8,32,56,32],[8,42,56,42]]}] }),
+      osm: makeIcon({ bg: ['#f4e8c8', '#e0d4a8', '#c8b888'], shapes: [
+        {type:'lines', color:'rgba(120,90,60,.65)', w:1.1, lines:[[8,32,56,32],[32,8,32,56],[16,16,48,48]]}] }),
+    };
+    const imageryModels = [
+      new Cesium.ProviderViewModel({ name: 'Esri World Imagery', iconUrl: ICONS.esri, tooltip: 'Imagery satelital Esri/Maxar/USGS.', creationFunction: esriImagery }),
+      new Cesium.ProviderViewModel({ name: 'Esri Dark (táctico)', iconUrl: ICONS.dark, tooltip: 'Base oscura de alto contraste para superposición de datos.', creationFunction: esriDarkGray }),
+      new Cesium.ProviderViewModel({ name: 'Esri + etiquetas', iconUrl: ICONS.esriLbl, tooltip: 'Imagery con fronteras y nombres.', creationFunction: esriImageryWithLabels }),
+      new Cesium.ProviderViewModel({ name: 'NASA Blue Marble', iconUrl: ICONS.blue, tooltip: 'Blue Marble + relieve + batimetría (NASA EOSDIS).', creationFunction: nasaBlueMarble }),
+      new Cesium.ProviderViewModel({ name: 'Esri Topográfico', iconUrl: ICONS.topo, tooltip: 'Topografía mundial con relieve.', creationFunction: esriTopo }),
+      new Cesium.ProviderViewModel({ name: 'Esri Océanos', iconUrl: ICONS.ocean, tooltip: 'Batimetría oceánica.', creationFunction: esriOcean }),
+      new Cesium.ProviderViewModel({ name: 'OpenStreetMap', iconUrl: ICONS.osm, tooltip: 'OSM callejero.', creationFunction: osm }),
+    ];
+
+    const viewer = new Cesium.Viewer('cesiumContainer', {
+      animation: true, timeline: true, baseLayerPicker: true,
+      imageryProviderViewModels: imageryModels,
+      selectedImageryProviderViewModel: imageryModels[1],  // Dark táctico por defecto
+      terrainProviderViewModels: [], geocoder: false, homeButton: true,
+      sceneModePicker: true, navigationHelpButton: false, fullscreenButton: true,
+      infoBox: true, selectionIndicator: true, shouldAnimate: false,
+    });
+    try { viewer.cesiumWidget.creditContainer.style.display = 'none'; } catch (e) {}
+
+    const scene = viewer.scene;
+    scene.globe.enableLighting = false;
+    scene.globe.showGroundAtmosphere = true;
+    if (scene.globe.atmosphereLightIntensity !== undefined) scene.globe.atmosphereLightIntensity = 8.0;
+    scene.skyAtmosphere.show = true;
+    scene.fog.enabled = true; scene.fog.density = 0.00006;
+    scene.backgroundColor = Cesium.Color.fromCssColorString('#04060a');
+    scene.globe.depthTestAgainstTerrain = true;
+    if (scene.globe.translucency) scene.globe.translucency.enabled = false;
+
+    const COL = {
+      sat: Cesium.Color.fromCssColorString('#38bdf8'),
+      aircraft: Cesium.Color.fromCssColorString('#f0b429'),
+      hostile: Cesium.Color.fromCssColorString('#e63946'),
+      surface: Cesium.Color.fromCssColorString('#ef5d4c'),
+      amber: Cesium.Color.fromCssColorString('#d98a2b'),
+    };
+    document.getElementById('hudSub').textContent = 'Esri Dark (táctico)';
+    try {
+      Cesium.knockout.getObservable(viewer.baseLayerPicker.viewModel, 'selectedImagery')
+        .subscribe(m => { if (m && m.name) document.getElementById('hudSub').textContent = m.name; });
+    } catch (e) {}
+
+    viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(20, 25, 26_000_000),
+      orientation: { heading: 0, pitch: -Cesium.Math.PI_OVER_TWO, roll: 0 },
+    });
+
+    let firstRenderDone = false;
+    scene.postRender.addEventListener(function () {
+      if (!firstRenderDone) { firstRenderDone = true; const m = document.getElementById('loadingMsg'); if (m) m.style.display = 'none'; }
+    });
+
+    // ── Geometría: horizonte óptico para un objeto a altitud h ────────
+    const EARTH_R_M = 6_371_000;
+    function horizonRadiusMeters(altKm) {
+      const R = EARTH_R_M, h = altKm * 1000.0, cosA = R / (R + h);
+      return R * Math.sqrt(Math.max(0, 1 - cosA * cosA));
+    }
+    // Resolución de geolocalización declarada → radio de halo (metros)
+    const GEOLOC_RADIUS_M = { exact: 1500, city: 12000, region: 55000, country: 150000 };
+
+    // Estado de render por capa para repintar sin recolocar cámara
+    let lastPayload = null;
+    let initialFlyDone = false;
+    const entityByKey = {};
+
+    function htmlInfo(rows) {
+      return '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;">' +
+        rows.map(([k, v]) => `<b>${k}:</b><span>${v}</span>`).join('') + '</div>';
+    }
+    function epBadge(ep) {
+      const c = { observed: '#38bdf8', asserted: '#ef5d4c', inferred: '#e63946' }[ep] || '#888';
+      const t = { observed: 'OBSERVADO', asserted: 'AFIRMADO', inferred: 'INFERIDO' }[ep] || ep;
+      return `<span style="color:${c};font-weight:700;">${t}</span>`;
+    }
+
+    // ── Render por dominio ───────────────────────────────────────────
+    function renderAll(payload) {
+      const d = payload.domains || {};
+      viewer.entities.removeAll();
+      for (const k in entityByKey) delete entityByKey[k];
+
+      const L = payload.layers || {};
+      const show = id => (L[id] !== undefined ? L[id] : document.getElementById('lyr-' + id)?.checked);
+
+      // ORBITAL (observed) — punto + groundtrack
+      if (show('orbital')) (d.orbital || []).forEach(o => {
+        const ent = viewer.entities.add({
+          name: o.name, position: Cesium.Cartesian3.fromDegrees(o.lon, o.lat, (o.alt_km || 0) * 1000),
+          point: { pixelSize: 9, color: COL.sat, outlineColor: Cesium.Color.WHITE.withAlpha(.8), outlineWidth: 1.5 },
+          label: { text: o.name, font: '11px Inter, sans-serif', fillColor: COL.sat, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+                   style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(10, 0), showBackground: true,
+                   backgroundColor: new Cesium.Color(.03, .05, .09, .75) },
+          description: `<h3>${o.name}</h3>` + epBadge('observed') + htmlInfo([
+            ['Dominio', 'Orbital (satélite)'], ['NORAD', o.id ?? '—'], ['Operador', o.owner ?? '—'],
+            ['Altitud', (o.alt_km ?? 0).toFixed(0) + ' km'], ['Inclinación', (o.incl ?? 0).toFixed(2) + '°'],
+            ['Período', (o.period_min ?? 0).toFixed(1) + ' min'], ['Error SGP4', '~' + (o.err_km ?? 2).toFixed(1) + ' km (ADR-0003)'],
+          ]),
+        });
+        entityByKey['orb_' + o.id] = ent;
+        if (o.track && o.track.length > 1) {
+          const pos = []; o.track.forEach(p => { pos.push(p[0], p[1], (p[2] ?? o.alt_km ?? 0) * 1000); });
+          viewer.entities.add({ polyline: { positions: Cesium.Cartesian3.fromDegreesArrayHeights(pos), width: 1.5,
+            material: COL.sat.withAlpha(.45) } });
+        }
+        if (show('range')) addRing(o.lon, o.lat, horizonRadiusMeters(o.alt_km || 0), COL.sat);
+      });
+
+      // AERIAL (observed) — punto ámbar + antigüedad
+      if (show('aerial')) (d.aerial || []).forEach(a => {
+        const stale = (a.age_s ?? 0) > 30;
+        const ent = viewer.entities.add({
+          name: a.callsign || a.id, position: Cesium.Cartesian3.fromDegrees(a.lon, a.lat, (a.alt_km || 0) * 1000),
+          point: { pixelSize: 7, color: COL.aircraft.withAlpha(stale ? .5 : 1), outlineColor: Cesium.Color.BLACK.withAlpha(.6), outlineWidth: 1 },
+          label: { text: a.callsign || '', font: '10px JetBrains Mono, monospace', fillColor: COL.aircraft, outlineColor: Cesium.Color.BLACK,
+                   outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(8, 0) },
+          description: `<h3>${a.callsign || a.id}</h3>` + epBadge('observed') + htmlInfo([
+            ['Dominio', 'Aéreo (ADS-B)'], ['ICAO24', a.id ?? '—'], ['Origen', a.origin ?? '—'],
+            ['Altitud', (a.alt_km ?? 0).toFixed(1) + ' km'], ['Rumbo', (a.heading ?? 0).toFixed(0) + '°'],
+            ['Vel.', (a.speed_kt ?? 0).toFixed(0) + ' kt'], ['Último msg', (a.age_s ?? 0).toFixed(0) + ' s' + (stale ? ' ⚠ antiguo' : '')],
+            ['Nota', 'Posición declarada por la aeronave · sujeta a spoofing'],
+          ]),
+        });
+        entityByKey['air_' + a.id] = ent;
+        if (show('range')) addRing(a.lon, a.lat, horizonRadiusMeters(a.alt_km || 0), COL.aircraft);
+      });
+
+      // SUBORBITAL (inferred) — banda de incertidumbre, NUNCA línea fina
+      if (show('suborbital')) (d.suborbital || []).forEach(s => {
+        if (s.arc && s.arc.length > 1) {
+          const pos3d = []; const ground = [];
+          s.arc.forEach(p => { pos3d.push(p[0], p[1], (p[2] || 0) * 1000); ground.push(p[0], p[1]); });
+          // Corredor de incertidumbre proyectado en superficie (banda visible)
+          viewer.entities.add({ corridor: {
+            positions: Cesium.Cartesian3.fromDegreesArray(ground),
+            width: Math.max(8000, (s.band_km || 25) * 2000),
+            material: COL.hostile.withAlpha(.14), cornerType: Cesium.CornerType.ROUNDED,
+          } });
+          // Arco 3D como glow ancho (no fino) — sigue siendo "banda", no línea
+          viewer.entities.add({ polyline: {
+            positions: Cesium.Cartesian3.fromDegreesArrayHeights(pos3d), width: 6,
+            material: new Cesium.PolylineGlowMaterialProperty({ color: COL.hostile.withAlpha(.85), glowPower: .3 }),
+          } });
+        }
+        // Marcadores de lanzamiento e impacto estimado
+        if (s.launch) addMarker(s.launch[0], s.launch[1], COL.amber, '▲');
+        if (s.impact) {
+          addRing(s.impact[0], s.impact[1], (s.impact_dispersion_km || 30) * 1000, COL.hostile);
+          addMarker(s.impact[0], s.impact[1], COL.hostile, '✕');
+        }
+        const apexLon = s.arc ? s.arc[Math.floor(s.arc.length / 2)][0] : (s.launch ? s.launch[0] : 0);
+        const apexLat = s.arc ? s.arc[Math.floor(s.arc.length / 2)][1] : (s.launch ? s.launch[1] : 0);
+        const apexAlt = s.apogee_km ? s.apogee_km * 1000 : 200000;
+        const ent = viewer.entities.add({
+          name: s.name, position: Cesium.Cartesian3.fromDegrees(apexLon, apexLat, apexAlt),
+          point: { pixelSize: 6, color: COL.hostile, outlineColor: Cesium.Color.WHITE.withAlpha(.7), outlineWidth: 1 },
+          description: `<h3>${s.name}</h3>` + epBadge('inferred') + htmlInfo([
+            ['Dominio', 'Suborbital (balístico)'], ['Reporte de origen', s.source ?? '—'],
+            ['Apogeo', (s.apogee_km ?? 0).toFixed(0) + ' km'], ['Alcance', (s.range_km ?? 0).toFixed(0) + ' km'],
+            ['Banda incert.', '± ' + (s.band_km ?? 25).toFixed(0) + ' km'],
+            ['Aviso', 'RECONSTRUCCIÓN desde reporte público · NO es track de sensor'],
+          ]),
+        });
+        entityByKey['sub_' + (s.id ?? s.name)] = ent;
+      });
+
+      // SURFACE (asserted) — halo = resolución de geolocalización
+      if (show('surface')) (d.surface || []).forEach(e => {
+        const r = GEOLOC_RADIUS_M[e.geoloc_res] || GEOLOC_RADIUS_M.city;
+        viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(e.lon, e.lat, 0), ellipse: {
+          semiMajorAxis: r, semiMinorAxis: r, material: COL.surface.withAlpha(.16),
+          outline: true, outlineColor: COL.surface.withAlpha(.6), outlineWidth: 1, height: 0 } });
+        const ent = viewer.entities.add({
+          name: e.name, position: Cesium.Cartesian3.fromDegrees(e.lon, e.lat, 0),
+          point: { pixelSize: 6 + Math.min(8, (e.events_count || 1)), color: COL.surface, outlineColor: Cesium.Color.BLACK.withAlpha(.5), outlineWidth: 1 },
+          description: `<h3>${e.name}</h3>` + epBadge('asserted') + htmlInfo([
+            ['Dominio', 'Superficie (evento de conflicto)'], ['Fuente', e.source ?? 'ACLED/GDELT'],
+            ['Tipo', e.event_type ?? '—'], ['Fecha', e.date ?? '—'], ['Eventos reportados', e.events_count ?? 1],
+            ['Resolución geoloc.', e.geoloc_res ?? 'city'],
+            ['Aviso', 'AFIRMADO por un tercero · no verificado por Titan Eye'],
+          ]),
+        });
+        entityByKey['srf_' + (e.id ?? e.name)] = ent;
+      });
+
+      // HEATMAP — densidad de eventos REPORTADOS (no amenaza, ADR-0003)
+      if (show('heatmap')) (payload.heatmap || []).forEach(h => {
+        const w = Math.max(0, Math.min(1, h.weight ?? .5));
+        const r = 40000 + w * 160000;
+        const col = Cesium.Color.fromHsl(0.02, 0.85, 0.25 + w * 0.25);  // escala roja
+        viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(h.lon, h.lat, 0), ellipse: {
+          semiMajorAxis: r, semiMinorAxis: r, material: col.withAlpha(.10 + w * .20), height: 0 } });
+      });
+
+      updateCounts(d, payload);
+      maybeSetupClock(payload);
+
+      // Vuela al centroide de actividad solo en la primera carga
+      if (!initialFlyDone) {
+        const c = focusPoint(d);
+        if (c) setTimeout(() => viewer.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(c[0], c[1], 14_000_000), duration: 2.0 }), 700);
+        initialFlyDone = true;
+      }
+    }
+
+    function addRing(lon, lat, radius, color) {
+      viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lon, lat, 0), ellipse: {
+        semiMajorAxis: radius, semiMinorAxis: radius, material: color.withAlpha(.05),
+        outline: true, outlineColor: color.withAlpha(.5), outlineWidth: 1, height: 0 } });
+    }
+    function addMarker(lon, lat, color, glyph) {
+      viewer.entities.add({ position: Cesium.Cartesian3.fromDegrees(lon, lat, 0),
+        label: { text: glyph, font: '16px sans-serif', fillColor: color, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+                 style: Cesium.LabelStyle.FILL_AND_OUTLINE } });
+    }
+    function focusPoint(d) {
+      const all = [].concat(d.surface || [], d.aerial || [], d.orbital || []);
+      if (!all.length) return null;
+      let lon = 0, lat = 0, n = 0;
+      all.forEach(x => { if (x.lon != null && x.lat != null) { lon += x.lon; lat += x.lat; n++; } });
+      return n ? [lon / n, lat / n] : null;
+    }
+    function updateCounts(d, p) {
+      const c = document.getElementById('hudCounts');
+      c.innerHTML = `SAT ${ (d.orbital||[]).length }  ·  AIR ${ (d.aerial||[]).length }  ·  ` +
+        `BAL ${ (d.suborbital||[]).length }  ·  EVT ${ (d.surface||[]).length }  ·  HEAT ${ (p.heatmap||[]).length }`;
+    }
+
+    // ── Time-slider: anima posiciones provistas en payload.series ─────
+    function maybeSetupClock(payload) {
+      const series = payload.series, clock = payload.clock;
+      if (!series || !clock || Object.keys(series).length === 0) return;
+      try {
+        const start = Cesium.JulianDate.fromIso8601(clock.start_iso);
+        const stop = Cesium.JulianDate.fromIso8601(clock.stop_iso);
+        const cur = Cesium.JulianDate.fromIso8601(clock.current_iso || clock.start_iso);
+        viewer.clock.startTime = start.clone(); viewer.clock.stopTime = stop.clone(); viewer.clock.currentTime = cur.clone();
+        viewer.clock.clockRange = Cesium.ClockRange.LOOP_STOP; viewer.clock.multiplier = clock.multiplier || 60; viewer.clock.shouldAnimate = false;
+        if (viewer.timeline) viewer.timeline.zoomTo(start, stop);
+        for (const [key, s] of Object.entries(series)) {
+          const ent = entityByKey[key]; if (!ent) continue;
+          const prop = new Cesium.SampledPositionProperty();
+          for (let i = 0; i < s.times.length; i++) {
+            prop.addSample(Cesium.JulianDate.fromIso8601(s.times[i]),
+              Cesium.Cartesian3.fromDegrees(s.positions[i][0], s.positions[i][1], (s.positions[i][2] || 0) * 1000));
+          }
+          ent.position = prop;
+        }
+        document.getElementById('hudSub').textContent += ' · animación temporal';
+      } catch (e) { console.warn('clock setup failed', e); }
+    }
+
+    // ── Capas base togglables dentro del iframe ──────────────────────
+    let labelsLayer = null;
+    document.getElementById('lyr-labels').addEventListener('change', e => {
+      if (e.target.checked && !labelsLayer) {
+        labelsLayer = viewer.imageryLayers.addImageryProvider(url('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', 'Esri Reference', 19));
+      } else if (!e.target.checked && labelsLayer) { viewer.imageryLayers.remove(labelsLayer, true); labelsLayer = null; }
+    });
+    document.getElementById('lyr-atmosphere').addEventListener('change', e => { scene.skyAtmosphere.show = e.target.checked; scene.globe.showGroundAtmosphere = e.target.checked; });
+    document.getElementById('lyr-lighting').addEventListener('change', e => { scene.globe.enableLighting = e.target.checked; });
+    // Las capas de dominio/heatmap/range repintan las entidades preservando cámara
+    ['orbital', 'aerial', 'suborbital', 'surface', 'heatmap', 'range'].forEach(id => {
+      document.getElementById('lyr-' + id).addEventListener('change', () => { if (lastPayload) renderAll(lastPayload); });
+    });
+
+    // ── Bridge: recibe datos del parent ──────────────────────────────
+    window.addEventListener('message', function (event) {
+      if (event.data && event.data.type === 'titan-eye-tracks') {
+        lastPayload = event.data.payload || {};
+        renderAll(lastPayload);
+      }
+    });
+    if (window.parent && window.parent !== window) window.parent.postMessage({ type: 'titan-eye-ready' }, '*');
+  </script>
+</body>
+</html>

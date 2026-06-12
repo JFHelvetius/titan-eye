@@ -1,0 +1,348 @@
+"""Titan Eye — dashboard Streamlit (culminación del proyecto).
+
+Panel de situación multidominio: combina los cuatro dominios (aéreo, orbital,
+suborbital, superficie) sobre un único globo táctico Cesium, con KPIs, tablas por
+dominio y verificación de procedencia. Es el destino del proyecto, igual que
+Orbital Sentinel culmina en su app Streamlit.
+
+Honestidad (ADR-0003): cada panel declara la naturaleza epistémica de su dato
+(observed / asserted / inferred) y su incertidumbre. El mapa de calor mide
+densidad de eventos REPORTADOS, no intensidad de conflicto.
+
+Ejecutar:
+    pip install -e ".[app]"
+    streamlit run app/streamlit_app.py
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import streamlit as st
+import streamlit.components.v1 as components
+
+try:
+    from app.cesium_globe import html as globe_html
+    from app.demo_data import demo_payload
+except ImportError:  # ejecutado desde dentro de app/
+    from cesium_globe import html as globe_html
+    from demo_data import demo_payload
+
+AMBER = "#d98a2b"
+
+
+def _css() -> None:
+    st.markdown(
+        f"""
+        <style>
+          .stApp {{ background: #080b10; }}
+          h1, h2, h3 {{ color: #e6e9ef; letter-spacing: .02em; }}
+          .te-tag {{ color: {AMBER}; font-family: 'JetBrains Mono', monospace; font-size: 12px; }}
+          .te-warn {{ background: rgba(217,138,43,.10); border: 1px solid rgba(217,138,43,.35);
+            border-radius: 8px; padding: 10px 14px; color: #f0d6a8; font-size: 13px; }}
+          [data-testid="stMetricValue"] {{ color: {AMBER}; }}
+          section[data-testid="stSidebar"] {{ background: #0c1016; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _empty_payload() -> dict:
+    return {
+        "domains": {"orbital": [], "aerial": [], "suborbital": [], "surface": []},
+        "heatmap": [],
+        "layers": {"orbital": True, "aerial": True, "suborbital": True,
+                   "surface": True, "heatmap": False, "range": False},
+    }
+
+
+# ── Fetchers por dominio (cada uno aislado; el fallo de uno no tumba el panel) ──
+def _fetch_aerial(bbox):
+    from titan_eye.catalog.normalizers.opensky_states import normalize_states
+    from titan_eye.ingestion.sources.opensky import OpenSkySource
+    from titan_eye.ingestion.transport import UrllibTransport
+    from titan_eye.orchestration.globe_payload import aerial_states_to_entries
+
+    src = OpenSkySource(transport=UrllibTransport())
+    art = src.fetch_states(bbox=bbox)
+    states = normalize_states(art)
+    return aerial_states_to_entries(states), {"hash": art.content_hash, "n": len(states),
+                                              "note": art.license_note}
+
+
+def _fetch_orbital(group):
+    from titan_eye.catalog.normalizers.tle import normalize_tles
+    from titan_eye.ingestion.sources.celestrak import CelesTrakSource
+    from titan_eye.ingestion.transport import UrllibTransport
+    from titan_eye.orchestration.globe_payload import orbital_elements_to_entries
+
+    src = CelesTrakSource(transport=UrllibTransport())
+    art = src.fetch_group(group)
+    elements = normalize_tles(art)
+    return orbital_elements_to_entries(elements), {"hash": art.content_hash, "n": len(elements),
+                                                   "note": art.license_note}
+
+
+def _fetch_surface(raw: bytes, bandwidth_km: float):
+    from titan_eye.analytics.surface.heatmap import compute_heatmap
+    from titan_eye.catalog.normalizers.conflict_events import normalize_conflict_events
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+    from titan_eye.orchestration.globe_payload import (
+        conflict_events_to_entries,
+        heatmap_to_points,
+    )
+
+    art = RawArtifact.seal(
+        source_id="conflict.events", domain=Domain.SURFACE, request_url="upload://events",
+        fetched_at=datetime.now(UTC), payload=raw,
+        epistemic_label=EpistemicLabel.ASSERTED,
+    )
+    events = normalize_conflict_events(art)
+    hm = compute_heatmap(events, bandwidth_km=bandwidth_km)
+    return (conflict_events_to_entries(events), heatmap_to_points(hm),
+            {"hash": art.content_hash, "n": len(events), "n_cells": len(hm.points)})
+
+
+def _reconstruct_ballistic(raw: bytes):
+    from titan_eye.analytics.ballistic.reconstruct import reconstruct
+    from titan_eye.catalog.normalizers.ballistic_report import normalize_ballistic_report
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+    from titan_eye.orchestration.globe_payload import ballistic_trajectories_to_entries
+
+    art = RawArtifact.seal(
+        source_id="ballistic.report", domain=Domain.SUBORBITAL, request_url="upload://report",
+        fetched_at=datetime.now(UTC), payload=raw,
+        epistemic_label=EpistemicLabel.ASSERTED,
+    )
+    report = normalize_ballistic_report(art)
+    traj = reconstruct(report)
+    return ballistic_trajectories_to_entries([traj]), {"hash": art.content_hash,
+                                                       "band_km": traj.band_km,
+                                                       "range_km": traj.range_km}
+
+
+# ── Panel de situación ────────────────────────────────────────────────────────
+def _sidebar_controls() -> dict:
+    st.sidebar.markdown("### Panel de situación")
+    st.sidebar.caption("Activa dominios y pulsa **Actualizar**. Cada uno se "
+                       "ingiere de su fuente pública con procedencia por hash.")
+    cfg: dict = {}
+
+    cfg["aerial"] = st.sidebar.checkbox("✈ Aéreo · OpenSky (ADS-B)", value=False)
+    cfg["aerial_bbox"] = st.sidebar.text_input("bbox aéreo (lat_min,lat_max,lon_min,lon_max)",
+                                               value="35,60,-10,40", disabled=not cfg["aerial"])
+
+    cfg["orbital"] = st.sidebar.checkbox("🛰 Orbital · CelesTrak (TLE)", value=False)
+    cfg["orbital_group"] = st.sidebar.text_input("GROUP orbital", value="stations",
+                                                disabled=not cfg["orbital"])
+
+    cfg["surface"] = st.sidebar.checkbox("🔥 Superficie · eventos + heatmap", value=False)
+    cfg["surface_file"] = st.sidebar.file_uploader("Dataset de eventos (JSON)", type=["json"],
+                                                  disabled=not cfg["surface"])
+    cfg["bandwidth"] = st.sidebar.slider("Bandwidth KDE (km)", 10, 200, 50, 5,
+                                        disabled=not cfg["surface"])
+
+    cfg["ballistic"] = st.sidebar.checkbox("🚀 Suborbital · reporte balístico", value=False)
+    cfg["ballistic_file"] = st.sidebar.file_uploader("Reporte balístico (JSON)", type=["json"],
+                                                    disabled=not cfg["ballistic"])
+
+    cfg["go"] = st.sidebar.button("⟳ Actualizar panel", use_container_width=True, type="primary")
+    st.sidebar.caption("Sin selección, el panel muestra datos de **demostración**.")
+    return cfg
+
+
+def _build_combined(cfg) -> tuple[dict, list[str], list[str]]:
+    """Ingiere los dominios activos y los combina en un único payload del globo."""
+    payload = _empty_payload()
+    notes: list[str] = []
+    errors: list[str] = []
+
+    if cfg["aerial"]:
+        try:
+            entries, meta = _fetch_aerial(_parse_bbox(cfg["aerial_bbox"]))
+            payload["domains"]["aerial"] = entries
+            notes.append(f"Aéreo: {meta['n']} aeronaves · `{meta['hash'][:10]}…` (observed)")
+        except Exception as exc:
+            errors.append(f"Aéreo: {type(exc).__name__}: {exc}")
+
+    if cfg["orbital"]:
+        try:
+            entries, meta = _fetch_orbital(cfg["orbital_group"].strip() or "stations")
+            payload["domains"]["orbital"] = entries
+            notes.append(f"Orbital: {meta['n']} satélites · `{meta['hash'][:10]}…` (observed)")
+        except Exception as exc:
+            errors.append(f"Orbital: {type(exc).__name__}: {exc}")
+
+    if cfg["surface"] and cfg["surface_file"] is not None:
+        try:
+            entries, hm_pts, meta = _fetch_surface(cfg["surface_file"].getvalue(), float(cfg["bandwidth"]))
+            payload["domains"]["surface"] = entries
+            payload["heatmap"] = hm_pts
+            payload["layers"]["heatmap"] = True
+            notes.append(f"Superficie: {meta['n']} eventos · {meta['n_cells']} celdas (asserted)")
+        except Exception as exc:
+            errors.append(f"Superficie: {type(exc).__name__}: {exc}")
+
+    if cfg["ballistic"] and cfg["ballistic_file"] is not None:
+        try:
+            entries, meta = _reconstruct_ballistic(cfg["ballistic_file"].getvalue())
+            payload["domains"]["suborbital"] = entries
+            notes.append(f"Suborbital: reconstruido · banda ±{meta['band_km']:.0f} km (inferred)")
+        except Exception as exc:
+            errors.append(f"Suborbital: {type(exc).__name__}: {exc}")
+
+    any_data = any(payload["domains"].values()) or payload["heatmap"]
+    if not any_data:
+        return demo_payload(), ["Mostrando datos de demostración sintéticos."], errors
+    return payload, notes, errors
+
+
+def _parse_bbox(raw: str):
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    a, b, c, d = (float(x) for x in raw.split(","))
+    return (a, b, c, d)
+
+
+def _kpis(payload: dict) -> None:
+    d = payload["domains"]
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Satélites", len(d["orbital"]))
+    c2.metric("Aeronaves", len(d["aerial"]))
+    c3.metric("Trayectorias", len(d["suborbital"]))
+    c4.metric("Eventos", len(d["surface"]))
+    c5.metric("Celdas calor", len(payload["heatmap"]))
+
+
+def _domain_tables(payload: dict) -> None:
+    d = payload["domains"]
+    if d["orbital"]:
+        with st.expander(f"🛰 Satélites ({len(d['orbital'])}) · observed", expanded=False):
+            st.dataframe([{k: r[k] for k in ("id", "name", "alt_km", "incl", "period_min", "err_km")}
+                          for r in d["orbital"]], use_container_width=True, hide_index=True)
+    if d["aerial"]:
+        with st.expander(f"✈ Aeronaves ({len(d['aerial'])}) · observed", expanded=False):
+            st.dataframe([{k: r[k] for k in ("id", "callsign", "lat", "lon", "alt_km", "heading", "age_s")}
+                          for r in d["aerial"]], use_container_width=True, hide_index=True)
+    if d["suborbital"]:
+        with st.expander(f"🚀 Trayectorias balísticas ({len(d['suborbital'])}) · inferred", expanded=True):
+            st.dataframe([{k: r[k] for k in ("id", "apogee_km", "range_km", "band_km", "impact_dispersion_km")}
+                          for r in d["suborbital"]], use_container_width=True, hide_index=True)
+            st.caption("RECONSTRUCCIÓN desde reporte público (asserted → inferred). NO es track de sensor.")
+    if d["surface"]:
+        with st.expander(f"🔥 Eventos de conflicto ({len(d['surface'])}) · asserted", expanded=False):
+            st.dataframe([{k: r[k] for k in ("id", "name", "lat", "lon", "event_type", "date", "geoloc_res")}
+                          for r in d["surface"]], use_container_width=True, hide_index=True)
+            st.caption("AFIRMADOS por terceros. Halo en el globo = resolución de geolocalización. "
+                       "Mapa de calor = densidad de eventos REPORTADOS, no intensidad (ADR-0003).")
+
+
+def _page_situation() -> None:
+    cfg = _sidebar_controls()
+    if cfg["go"] or "te_payload" not in st.session_state:
+        payload, notes, errors = _build_combined(cfg)
+        st.session_state["te_payload"] = payload
+        st.session_state["te_notes"] = notes
+        st.session_state["te_errors"] = errors
+
+    payload = st.session_state["te_payload"]
+    for e in st.session_state.get("te_errors", []):
+        st.error(e)
+    notes = st.session_state.get("te_notes", [])
+    if notes:
+        st.markdown('<div class="te-warn">' + " · ".join(notes) + "</div>", unsafe_allow_html=True)
+
+    _kpis(payload)
+    components.html(globe_html(payload, height=820), height=840, scrolling=False)
+    st.caption("Epistemología (P9): observed = punto nítido + error nominal · asserted = halo según "
+               "resolución de geoloc · inferred = banda de incertidumbre (línea fina prohibida).")
+    _domain_tables(payload)
+
+
+def _page_verify() -> None:
+    st.subheader("Verificación de procedencia")
+    st.markdown(
+        "Cada detección se ata por hash a los bytes públicos que la produjeron (ADR-0005). "
+        "Los verificadores comprueban dos invariantes por dominio: **I1** referencial "
+        "(todo Normalized tiene su Raw en la cache) y **I2** reproducibilidad "
+        "(re-normalizar el Raw reproduce las mismas filas)."
+    )
+    root = st.text_input("Raíz de datos local (la generada con `--persist`)", value="./data")
+    domain = st.selectbox("Dominio", ["aerial", "orbital", "surface"])
+    if st.button("Verificar integridad"):
+        try:
+            from pathlib import Path
+
+            from titan_eye.ingestion.cache import FetchCache
+            cache = FetchCache(Path(root) / "cache")
+            if domain == "aerial":
+                from titan_eye.catalog.aircraft_states_repo import AircraftStatesRepository
+                from titan_eye.provenance.integrity import verify_aerial_integrity
+                rep = verify_aerial_integrity(
+                    AircraftStatesRepository(Path(root) / "normalized" / "aerial"), cache)
+            elif domain == "orbital":
+                from titan_eye.catalog.orbital_elements_repo import OrbitalElementsRepository
+                from titan_eye.provenance.integrity import verify_orbital_integrity
+                rep = verify_orbital_integrity(
+                    OrbitalElementsRepository(Path(root) / "normalized" / "orbital"), cache)
+            else:
+                from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
+                from titan_eye.provenance.integrity import verify_surface_integrity
+                rep = verify_surface_integrity(
+                    ConflictEventsRepository(Path(root) / "normalized" / "surface"), cache)
+            (st.success if rep.ok else st.error)(
+                f"{'✓ Íntegro' if rep.ok else '✗ Violación'} · {rep.n_states} filas · "
+                f"{rep.n_source_hashes} snapshots · huérfanos: {len(rep.orphan_source_hashes)} · "
+                f"mismatches: {len(rep.reproducibility_mismatches)}"
+            )
+        except Exception as exc:
+            st.error(f"{type(exc).__name__}: {exc}")
+
+
+def _page_about() -> None:
+    st.subheader("Qué es Titan Eye")
+    st.markdown(
+        """
+Registro de detección verificable de eventos **orbitales, suborbitales, aéreos y de
+superficie** de relevancia militar, con **datos públicos**, **procedencia por hash**
+e **incertidumbre declarada**.
+
+**No** es un sistema de targeting. **No** clasifica intención ni amenaza. Produce
+geometría con error, conteos con procedencia y visualización honesta.
+
+| Dominio | Fuente pública | Naturaleza (P9) |
+|---|---|---|
+| Aéreo | OpenSky (ADS-B) | `observed` |
+| Orbital | CelesTrak (TLE) → SGP4 | `observed` |
+| Suborbital | Reportes públicos → reconstrucción Kepleriana | `asserted → inferred` |
+| Superficie | ACLED/GDELT → KDE | `asserted` |
+
+El mapa de calor mide densidad de eventos **reportados**, no intensidad de conflicto.
+Ver `docs/adr/0000-long-term-vision.md` y `docs/adr/0003-uncertainty-and-no-intent.md`.
+        """
+    )
+
+
+def main() -> None:
+    st.set_page_config(page_title="Titan Eye · Panel de situación", page_icon="🛰",
+                       layout="wide", initial_sidebar_state="expanded")
+    _css()
+    st.markdown("# 🛰 Titan Eye <span class='te-tag'>· panel de situación multidominio</span>",
+                unsafe_allow_html=True)
+    tab_sit, tab_verify, tab_about = st.tabs(["Panel de situación", "Verificación", "Acerca de"])
+    with tab_sit:
+        _page_situation()
+    with tab_verify:
+        _page_verify()
+    with tab_about:
+        _page_about()
+
+
+if __name__ == "__main__":
+    main()
