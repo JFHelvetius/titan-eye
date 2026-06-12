@@ -92,13 +92,6 @@
     .hud .lyr-panel label:hover { color: var(--amber-soft); }
     .hud .lyr-panel input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--amber); cursor: pointer; }
     .hud .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
-    .legend {
-      position: absolute; bottom: 14px; left: 14px; z-index: 999;
-      color: var(--text); padding: 9px 12px; font-size: 11px;
-      background: rgba(12,16,23,.78); border: 1px solid rgba(217,138,43,.25);
-      border-radius: 8px; backdrop-filter: blur(8px); line-height: 1.7;
-    }
-    .legend .ep { color: rgba(190,200,220,.7); font-size: 10px; }
     /* Timeline + animación — tono tactical */
     .cesium-viewer-timelineContainer { background: rgba(12,16,23,.92) !important; border-top: 1px solid rgba(217,138,43,.25) !important; }
     .cesium-viewer-animationContainer { background: rgba(12,16,23,.92) !important; }
@@ -135,13 +128,6 @@
       <label><input type="checkbox" id="lyr-atmosphere" checked> Atmósfera</label>
       <label><input type="checkbox" id="lyr-lighting"> Iluminación día/noche</label>
     </div>
-  </div>
-
-  <div class="legend">
-    <div><b>Epistemología</b> <span class="ep">(ADR-0003 · P9)</span></div>
-    <div><span class="dot" style="background:var(--sat)"></span> observado · punto nítido + error nominal</div>
-    <div><span class="dot" style="background:var(--surface)"></span> afirmado · halo = resolución de geoloc.</div>
-    <div><span class="dot" style="background:var(--hostile)"></span> inferido · banda de incertidumbre (no línea fina)</div>
   </div>
 
   <script>
