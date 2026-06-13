@@ -294,8 +294,31 @@ def _build_combined(cfg) -> tuple[dict, list[str], list[str]]:
     any_data = (any(payload["domains"].values()) or payload["heatmap"]
                 or payload.get("installations") or payload.get("osint"))
     if not any_data:
-        return demo_payload(), ["Mostrando datos de demostración sintéticos."], errors
+        return _default_payload()
     return payload, notes, errors
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_orbital(group: str):
+    """Satélites en vivo (CelesTrak) cacheados 10 min (no re-llama en cada rerun)."""
+    return _fetch_orbital(group)
+
+
+def _default_payload() -> tuple[dict, list[str], list[str]]:
+    """Vista por defecto SIN que el usuario suba nada: satélites EN VIVO reales
+    (CelesTrak) + el resto de capas precargadas como muestra ilustrativa."""
+    payload = demo_payload()
+    notes: list[str] = []
+    try:
+        entries, meta = _cached_orbital("stations")
+        if entries:
+            payload["domains"]["orbital"] = entries
+            notes.append(f"🛰 Satélites EN VIVO · CelesTrak ({meta['n']}, tiempo real)")
+    except Exception:
+        notes.append("Satélites: muestra (CelesTrak no disponible ahora)")
+    notes.append("Resto de capas: **muestra ilustrativa** — sube tus datasets en la "
+                 "barra lateral o activa OpenSky para aéreo en vivo.")
+    return payload, notes, []
 
 
 def _parse_bbox(raw: str):

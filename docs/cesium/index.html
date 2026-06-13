@@ -110,6 +110,20 @@
       background: rgba(12,16,23,.85); border: 1px solid rgba(217,138,43,.3);
       border-radius: 6px; z-index: 100;
     }
+    /* Leyenda de identificación: qué es cada objeto del globo. */
+    .leg {
+      position: absolute; bottom: 12px; left: 12px; z-index: 999;
+      background: rgba(12,16,23,.72); border: 1px solid rgba(217,138,43,.22);
+      border-radius: 8px; backdrop-filter: blur(8px); padding: 8px 11px;
+      color: var(--text); font-size: 11px; line-height: 1.55; max-width: 220px;
+    }
+    .leg .lt { font-size: 10px; text-transform: uppercase; letter-spacing: .07em;
+      color: rgba(190,200,220,.7); margin-bottom: 3px; }
+    .leg .row { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .leg .gl { width: 16px; text-align: center; font-size: 12px; }
+    .leg .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+    .leg .tog { cursor: pointer; color: var(--amber-soft); font-size: 10px;
+      float: right; user-select: none; }
   </style>
 </head>
 <body>
@@ -136,6 +150,19 @@
       <label><input type="checkbox" id="lyr-atmosphere" checked> Atmósfera</label>
       <label><input type="checkbox" id="lyr-lighting"> Iluminación día/noche</label>
     </div>
+  </div>
+
+  <div class="leg" id="legend">
+    <div class="lt">Identificación <span class="tog" id="legToggle">ocultar</span></div>
+    <div class="row"><span class="gl dot" style="background:var(--sat)"></span> Satélite (orbital)</div>
+    <div class="row"><span class="gl dot" style="background:var(--aircraft)"></span> Aeronave (aéreo)</div>
+    <div class="row"><span class="gl dot" style="background:var(--naval)"></span> Buque (naval)</div>
+    <div class="row"><span class="gl" style="color:var(--hostile)">▲✕</span> Lanzamiento / impacto balístico</div>
+    <div class="row"><span class="gl dot" style="background:var(--surface)"></span> Evento de conflicto</div>
+    <div class="row"><span class="gl" style="color:var(--installation)">▣</span> Base militar</div>
+    <div class="row"><span class="gl" style="color:var(--infra)">◆</span> Infraestructura crítica</div>
+    <div class="row"><span class="gl" style="color:var(--osint)">✎</span> Noticia / RRSS (OSINT)</div>
+    <div class="lt" style="margin-top:6px">Epistemología: punto nítido=observado · halo=afirmado · tubo=inferido</div>
   </div>
 
   <script>
@@ -551,6 +578,19 @@
     });
     document.getElementById('lyr-atmosphere').addEventListener('change', e => { scene.skyAtmosphere.show = e.target.checked; scene.globe.showGroundAtmosphere = e.target.checked; });
     document.getElementById('lyr-lighting').addEventListener('change', e => { scene.globe.enableLighting = e.target.checked; });
+    // Leyenda de identificación: ocultar/mostrar (no estorba si no se quiere).
+    (function () {
+      const leg = document.getElementById('legend');
+      const tog = document.getElementById('legToggle');
+      let shown = true;
+      tog.addEventListener('click', function () {
+        shown = !shown;
+        leg.querySelectorAll('.row, .lt:last-child').forEach(el => {
+          el.style.display = shown ? '' : 'none';
+        });
+        tog.textContent = shown ? 'ocultar' : 'mostrar';
+      });
+    })();
     // Las capas de dominio/heatmap/range repintan las entidades preservando cámara
     ['orbital', 'aerial', 'maritime', 'suborbital', 'surface', 'heatmap', 'range', 'installations', 'osint'].forEach(id => {
       document.getElementById('lyr-' + id).addEventListener('change', () => { if (lastPayload) renderAll(lastPayload); });
