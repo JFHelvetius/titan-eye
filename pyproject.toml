@@ -75,6 +75,7 @@ ignore = [
     "PLC0415",  # import-outside-top-level — lazy imports deliberados
     "UP042",    # str-enum — usamos el patrón explícito `class X(str, Enum)` (igual que el hermano)
     "PLR0911",  # too-many-returns — el router de la CLI es un dispatch lineal plano
+    "PLR0912",  # too-many-branches — ensamblado lineal multidominio del panel
     "PLR0915",  # too-many-statements — páginas Streamlit y flujos lineales
 ]
 

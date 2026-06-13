@@ -81,6 +81,14 @@ def demo_payload() -> dict[str, Any]:
             {"lon": 35.0, "lat": 49.0, "weight": 0.7},
             {"lon": 38.5, "lat": 47.2, "weight": 0.6},
         ],
+        "installations": [
+            {"id": "INST-1", "name": "Base aérea demo", "lon": 34.0, "lat": 49.0,
+             "type": "air_base", "category": "military", "country": "(sintético)",
+             "source": "(OSM sintético)"},
+            {"id": "INST-2", "name": "Central nuclear demo", "lon": 30.1, "lat": 51.4,
+             "type": "nuclear_plant", "category": "critical_infrastructure",
+             "country": "(sintético)", "source": "(OSM sintético)"},
+        ],
         "layers": {"orbital": True, "aerial": True, "maritime": True, "suborbital": True,
-                   "surface": True, "heatmap": False, "range": False},
+                   "surface": True, "heatmap": False, "range": False, "installations": True},
     }

@@ -21,9 +21,12 @@ from dataclasses import dataclass, field
 from titan_eye.catalog.aircraft import AircraftState
 from titan_eye.catalog.aircraft_states_repo import AircraftStatesRepository
 from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
+from titan_eye.catalog.installations import Installation
+from titan_eye.catalog.installations_repo import InstallationsRepository
 from titan_eye.catalog.maritime import VesselPosition
 from titan_eye.catalog.normalizers.ais import normalize_ais
 from titan_eye.catalog.normalizers.conflict_events import normalize_conflict_events
+from titan_eye.catalog.normalizers.installations import normalize_installations
 from titan_eye.catalog.normalizers.opensky_states import normalize_states
 from titan_eye.catalog.normalizers.tle import normalize_tles
 from titan_eye.catalog.orbital import OrbitalElement
@@ -48,7 +51,9 @@ class IntegrityReport:
         return not self.orphan_source_hashes and not self.reproducibility_mismatches
 
 
-def _row_identity(row: AircraftState | OrbitalElement | ConflictEvent | VesselPosition) -> str:
+def _row_identity(
+    row: AircraftState | OrbitalElement | ConflictEvent | VesselPosition | Installation,
+) -> str:
     """Hash canónico del contenido SEMÁNTICO de una fila Normalized (estable
     bajo reproceso). El content_hash_source y schema_version forman parte de la
     identidad: lo que define la fila es todo su contenido normalizado."""
@@ -204,6 +209,45 @@ def verify_maritime_integrity(
 
     return IntegrityReport(
         n_states=len(vessels),
+        n_source_hashes=len(source_hashes),
+        orphan_source_hashes=orphans,
+        reproducibility_mismatches=mismatches,
+    )
+
+
+def verify_installations_integrity(
+    repo: InstallationsRepository,
+    cache: FetchCache,
+    *,
+    check_reproducibility: bool = True,
+) -> IntegrityReport:
+    """Espejo de la capa de referencia: I1 referencial + I2 reproducibilidad
+    del parseo de instalaciones (ADR-0017)."""
+    items = list(repo.iter_all())
+    source_hashes = sorted({i.content_hash_source for i in items})
+
+    orphans: list[str] = [h for h in source_hashes if not cache.has_blob(h)]
+
+    mismatches: list[str] = []
+    if check_reproducibility:
+        by_source: dict[str, list[Installation]] = {}
+        for it in items:
+            by_source.setdefault(it.content_hash_source, []).append(it)
+        for h in source_hashes:
+            if h in orphans:
+                continue
+            artifact = cache.get_by_content_hash(h)
+            if artifact is None:
+                orphans.append(h)
+                continue
+            reproduced = normalize_installations(artifact)
+            expected = {_row_identity(i) for i in reproduced}
+            persisted = {_row_identity(i) for i in by_source[h]}
+            if expected != persisted:
+                mismatches.append(h)
+
+    return IntegrityReport(
+        n_states=len(items),
         n_source_hashes=len(source_hashes),
         orphan_source_hashes=orphans,
         reproducibility_mismatches=mismatches,

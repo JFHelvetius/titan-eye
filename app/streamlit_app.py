@@ -52,9 +52,26 @@ def _empty_payload() -> dict:
     return {
         "domains": {"orbital": [], "aerial": [], "maritime": [], "suborbital": [], "surface": []},
         "heatmap": [],
+        "installations": [],
         "layers": {"orbital": True, "aerial": True, "maritime": True, "suborbital": True,
-                   "surface": True, "heatmap": False, "range": False},
+                   "surface": True, "heatmap": False, "range": False, "installations": True},
     }
+
+
+def _fetch_installations(raw: bytes):
+    from titan_eye.catalog.normalizers.installations import normalize_installations
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+    from titan_eye.orchestration.globe_payload import installations_to_entries
+
+    art = RawArtifact.seal(
+        source_id="installations.reference", domain=Domain.REFERENCE,
+        request_url="upload://installations", fetched_at=datetime.now(UTC), payload=raw,
+        epistemic_label=EpistemicLabel.ASSERTED,
+    )
+    items = normalize_installations(art)
+    return installations_to_entries(items), {"hash": art.content_hash, "n": len(items)}
 
 
 def _fetch_maritime(raw: bytes):
@@ -170,6 +187,10 @@ def _sidebar_controls() -> dict:
     cfg["ballistic_file"] = st.sidebar.file_uploader("Reporte balístico (JSON)", type=["json"],
                                                     disabled=not cfg["ballistic"])
 
+    cfg["installations"] = st.sidebar.checkbox("🏛 Bases e infraestructura (referencia)", value=False)
+    cfg["installations_file"] = st.sidebar.file_uploader("Dataset de instalaciones (JSON)", type=["json"],
+                                                        disabled=not cfg["installations"])
+
     cfg["go"] = st.sidebar.button("⟳ Actualizar panel", use_container_width=True, type="primary")
     st.sidebar.caption("Sin selección, el panel muestra datos de **demostración**.")
     return cfg
@@ -223,7 +244,15 @@ def _build_combined(cfg) -> tuple[dict, list[str], list[str]]:
         except Exception as exc:
             errors.append(f"Suborbital: {type(exc).__name__}: {exc}")
 
-    any_data = any(payload["domains"].values()) or payload["heatmap"]
+    if cfg["installations"] and cfg["installations_file"] is not None:
+        try:
+            entries, meta = _fetch_installations(cfg["installations_file"].getvalue())
+            payload["installations"] = entries
+            notes.append(f"Referencia: {meta['n']} instalaciones (asserted, estático)")
+        except Exception as exc:
+            errors.append(f"Instalaciones: {type(exc).__name__}: {exc}")
+
+    any_data = any(payload["domains"].values()) or payload["heatmap"] or payload.get("installations")
     if not any_data:
         return demo_payload(), ["Mostrando datos de demostración sintéticos."], errors
     return payload, notes, errors
@@ -275,6 +304,13 @@ def _domain_tables(payload: dict) -> None:
                           for r in d["surface"]], use_container_width=True, hide_index=True)
             st.caption("AFIRMADOS por terceros. Halo en el globo = resolución de geolocalización. "
                        "Mapa de calor = densidad de eventos REPORTADOS, no intensidad (ADR-0003).")
+    if payload.get("installations"):
+        inst = payload["installations"]
+        with st.expander(f"🏛 Bases e infraestructura ({len(inst)}) · referencia (asserted)", expanded=False):
+            st.dataframe([{k: r[k] for k in ("id", "name", "type", "category", "country", "source")}
+                          for r in inst], use_container_width=True, hide_index=True)
+            st.caption("Geografía PÚBLICA estática (OSM/Wikipedia/FAS). Puede estar desactualizada. "
+                       "Solo display: sin proximidad-a-objetivo ni cómputo operacional (ADR-0017).")
 
 
 def _page_situation() -> None:

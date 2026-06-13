@@ -15,6 +15,7 @@ from titan_eye.analytics.propagation.sgp4_propagator import groundtrack, propaga
 from titan_eye.analytics.surface.heatmap import HeatmapResult
 from titan_eye.catalog.aircraft import AircraftState
 from titan_eye.catalog.ballistic import BallisticTrajectory
+from titan_eye.catalog.installations import Installation
 from titan_eye.catalog.maritime import VesselPosition
 from titan_eye.catalog.orbital import SGP4_BASELINE_KM, OrbitalElement
 from titan_eye.catalog.surface import ConflictEvent
@@ -140,6 +141,40 @@ def suborbital_payload(
         "heatmap": [],
         "layers": layers or {"suborbital": True, "orbital": False, "aerial": False,
                              "surface": False, "heatmap": False, "range": False},
+    }
+
+
+def installations_to_entries(items: list[Installation]) -> list[dict[str, Any]]:
+    """list[Installation] -> entradas 'installations' del payload (capa de referencia).
+
+    Geografía pública estática (asserted). El globo las dibuja como referencia; el
+    sistema no computa nada operacional con ellas (ADR-0017)."""
+    out: list[dict[str, Any]] = []
+    for it in items:
+        out.append({
+            "id": it.installation_id,
+            "name": it.name,
+            "lon": it.longitude,
+            "lat": it.latitude,
+            "type": it.installation_type.value,
+            "category": it.category.value,
+            "country": it.country or "",
+            "source": it.source or "(referencia pública)",
+        })
+    return out
+
+
+def installations_payload(
+    items: list[Installation], *, layers: dict[str, bool] | None = None
+) -> dict[str, Any]:
+    """Payload del globo con solo la capa de instalaciones."""
+    return {
+        "domains": {"orbital": [], "aerial": [], "maritime": [], "suborbital": [], "surface": []},
+        "heatmap": [],
+        "installations": installations_to_entries(items),
+        "layers": layers or {"installations": True, "orbital": False, "aerial": False,
+                             "maritime": False, "suborbital": False, "surface": False,
+                             "heatmap": False, "range": False},
     }
 
 

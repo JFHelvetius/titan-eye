@@ -128,9 +128,17 @@ intención ni futuro; es el patrón `Pc`-con-asunciones de Orbital Sentinel (ADR
 aplicado aquí. **Sin** soluciones de targeting ni apoyo a decisión de fuego — esa
 sigue siendo la única línea dura, y ninguna capa pedida la cruza.
 
-> **Capas alineadas pendientes (planificables cuando se quiera):** bases e
-> infraestructura como referencia pública estática (OSINT), noticias/RRSS
-> verificadas geolocalizadas, línea temporal histórica, fichas país/alianzas.
+## Fase 8 — Capa de referencia: bases e infraestructura  *(núcleo cerrado)*
+
+Geografía pública estática (ADR-0017), no un dominio de actividad.
+
+- [x] `Installation` (`asserted`) con tipos militares (base aérea/naval/army, silo, centro de mando, radar) e infraestructura crítica (central eléctrica/nuclear, refinería, puerto, aeropuerto, presa). `Domain.REFERENCE` como tag del Raw.
+- [x] Normalizador, repo Parquet, `verify-installations`, CLI `ingest installations`. Capa "Bases e infraestructura" en el globo (militar ▣ / infra ◆) + tabla en el dashboard.
+- [x] **Frontera dura:** solo fuentes públicas; etiqueta `asserted` + nota de posible desactualización; **excluidas del cálculo de proximidad y de todo cómputo operacional** (sin proximidad-a-objetivo, sin scoring de vulnerabilidad). Solo display.
+
+> **Capas alineadas pendientes (planificables cuando se quiera):** noticias/RRSS
+> verificadas geolocalizadas, línea temporal histórica, fichas país/alianzas,
+> categorización por tipo (caza/bombardero; recon/sigint) y filtro por país.
 
 ---
 

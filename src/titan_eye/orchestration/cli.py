@@ -121,6 +121,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_maritime.add_argument("--persist", action="store_true",
                             help="Persiste los buques en Parquet (requiere --data-root).")
 
+    p_inst = ingest_sub.add_parser("installations",
+                                   help="Referencia: bases e infraestructura (OSINT estático)")
+    p_inst.add_argument("--file", required=True,
+                        help="Fichero JSON de instalaciones (fuentes públicas).")
+    p_inst.add_argument("--data-root", default=None, help="Raíz de datos local (para --persist).")
+    p_inst.add_argument("--persist", action="store_true",
+                        help="Persiste las instalaciones en Parquet (requiere --data-root).")
+
     p_heat = sub.add_parser("heatmap",
                             help="Mapa de calor KDE de densidad de eventos REPORTADOS (superficie)")
     p_heat.add_argument("--events", required=True, help="Fichero JSON de eventos.")
@@ -138,7 +146,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bal.add_argument("--persist", action="store_true",
                        help="Persiste la trayectoria reconstruida (requiere --data-root).")
 
-    for dom in ("aerial", "orbital", "surface", "maritime"):
+    for dom in ("aerial", "orbital", "surface", "maritime", "installations"):
         pv = sub.add_parser(f"verify-{dom}", help=f"Verifica integridad de la cadena {dom}")
         pv.add_argument("--data-root", required=True, help="Raíz de datos local a verificar.")
         pv.add_argument("--no-reproducibility", action="store_true",
@@ -174,12 +182,16 @@ def cli_entry_point(argv: list[str] | None = None) -> int:
             return _cmd_ingest_surface(args)
         if args.command == "ingest" and args.domain == "maritime":
             return _cmd_ingest_maritime(args)
+        if args.command == "ingest" and args.domain == "installations":
+            return _cmd_ingest_installations(args)
         if args.command == "heatmap":
             return _cmd_heatmap(args)
         if args.command == "reconstruct-ballistic":
             return _cmd_reconstruct_ballistic(args)
         if args.command in ("verify-aerial", "verify-orbital", "verify-surface", "verify-maritime"):
             return _cmd_verify(args, domain=args.command.split("-", 1)[1])
+        if args.command == "verify-installations":
+            return _cmd_verify_installations(args)
         if args.command == "build-case":
             return _cmd_build_case(args)
         if args.command == "verify-case":
@@ -401,6 +413,75 @@ def _cmd_ingest_maritime(args: argparse.Namespace) -> int:
         summary["persisted_total"] = repo.count()
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
+
+
+def run_ingest_installations(*, artifact) -> tuple[dict[str, Any], list]:
+    """Normaliza un dataset de instalaciones sellado. No toca red. (resumen, items)."""
+    from titan_eye.catalog.normalizers.installations import normalize_installations
+
+    items = normalize_installations(artifact)
+    by_cat: dict[str, int] = {}
+    by_type: dict[str, int] = {}
+    for it in items:
+        by_cat[it.category.value] = by_cat.get(it.category.value, 0) + 1
+        by_type[it.installation_type.value] = by_type.get(it.installation_type.value, 0) + 1
+    summary = {
+        "layer": "installations",
+        "content_hash": artifact.content_hash,
+        "epistemic_label": artifact.epistemic_label.value,   # asserted
+        "n_installations": len(items),
+        "by_category": by_cat,
+        "by_type": by_type,
+        "note": ("Geografía de referencia PÚBLICA y estática (asserted). Puede estar "
+                 "desactualizada/aproximada. Sin cómputo operacional ni targeting (ADR-0017)."),
+    }
+    return summary, items
+
+
+def _cmd_ingest_installations(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from titan_eye.core.domains import Domain
+    from titan_eye.ingestion.sources.local_report import seal_report_file
+
+    artifact = seal_report_file(
+        args.file, domain=Domain.REFERENCE, source_id="installations.reference",
+        license_note="Referencia pública (OSM/Wikipedia/FAS) — respetar atribución y TOS.",
+    )
+    summary, items = run_ingest_installations(artifact=artifact)
+    if args.persist:
+        if not args.data_root:
+            raise TitanEyeError("--persist requiere --data-root")
+        from titan_eye.catalog.installations_repo import InstallationsRepository
+        from titan_eye.ingestion.cache import FetchCache
+        FetchCache(Path(args.data_root) / "cache").put(artifact, cache_key=artifact.content_hash)
+        repo = InstallationsRepository(Path(args.data_root) / "reference" / "installations")
+        summary["snapshot_written"] = repo.insert_snapshot(items)
+        summary["persisted_total"] = repo.count()
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_verify_installations(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from titan_eye.catalog.installations_repo import InstallationsRepository
+    from titan_eye.ingestion.cache import FetchCache
+    from titan_eye.provenance.integrity import verify_installations_integrity
+
+    root = Path(args.data_root)
+    repo = InstallationsRepository(root / "reference" / "installations")
+    cache = FetchCache(root / "cache")
+    report = verify_installations_integrity(
+        repo, cache, check_reproducibility=not args.no_reproducibility
+    )
+    print(json.dumps({
+        "ok": report.ok, "n_states": report.n_states,
+        "n_source_hashes": report.n_source_hashes,
+        "orphan_source_hashes": report.orphan_source_hashes,
+        "reproducibility_mismatches": report.reproducibility_mismatches,
+    }, indent=2, ensure_ascii=False))
+    return 0 if report.ok else 1
 
 
 def run_reconstruct_ballistic(*, artifact, n_points: int = 60) -> tuple[dict[str, Any], Any]:

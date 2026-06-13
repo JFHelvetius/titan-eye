@@ -20,6 +20,8 @@
       --sat: #38bdf8;         /* orbital observed */
       --naval: #34d399;       /* marítimo observed (AIS) */
       --surface: #ef5d4c;     /* superficie asserted */
+      --installation: #9aa7b4;/* referencia estática (bases/infraestructura) */
+      --infra: #c9a227;       /* infraestructura crítica */
       --neutral: #5b6b7a;
       --text: #e6e9ef;
     }
@@ -124,6 +126,8 @@
       <label><input type="checkbox" id="lyr-suborbital" checked><span class="dot" style="background:var(--hostile)"></span> Trayectorias balísticas</label>
       <label><input type="checkbox" id="lyr-surface" checked><span class="dot" style="background:var(--surface)"></span> Eventos de conflicto</label>
       <label><input type="checkbox" id="lyr-heatmap"><span class="dot" style="background:#b91c1c"></span> Mapa de calor (reportes)</label>
+      <div class="lp-title">Referencia (OSINT estático)</div>
+      <label><input type="checkbox" id="lyr-installations"><span class="dot" style="background:var(--installation)"></span> Bases e infraestructura</label>
       <div class="lp-title">Geometría y base</div>
       <label><input type="checkbox" id="lyr-range"> Anillos de alcance / horizonte</label>
       <label><input type="checkbox" id="lyr-labels"> Etiquetas (fronteras, ciudades)</label>
@@ -229,6 +233,8 @@
       naval: Cesium.Color.fromCssColorString('#34d399'),
       hostile: Cesium.Color.fromCssColorString('#e63946'),
       surface: Cesium.Color.fromCssColorString('#ef5d4c'),
+      installation: Cesium.Color.fromCssColorString('#9aa7b4'),
+      infra: Cesium.Color.fromCssColorString('#c9a227'),
       amber: Cesium.Color.fromCssColorString('#d98a2b'),
     };
     document.getElementById('hudSub').textContent = 'Esri Dark (táctico)';
@@ -419,6 +425,28 @@
           semiMajorAxis: r, semiMinorAxis: r, material: col.withAlpha(.10 + w * .20), height: 0 } });
       });
 
+      // INSTALLATIONS — capa de referencia ESTÁTICA pública (asserted, ADR-0017).
+      // Solo display: el sistema no computa nada operacional con ellas.
+      if (show('installations')) (payload.installations || []).forEach(it => {
+        const mil = it.category === 'military';
+        const col = mil ? COL.installation : COL.infra;
+        viewer.entities.add({
+          name: it.name, position: Cesium.Cartesian3.fromDegrees(it.lon, it.lat, 0),
+          point: { pixelSize: 9, color: col.withAlpha(.9),
+                   outlineColor: Cesium.Color.BLACK.withAlpha(.6), outlineWidth: 1 },
+          label: { text: mil ? '▣' : '◆', font: '13px sans-serif', fillColor: col,
+                   outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+                   style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                   pixelOffset: new Cesium.Cartesian2(0, -12) },
+          description: `<h3>${it.name}</h3>` + epBadge('asserted') + htmlInfo([
+            ['Capa', 'Referencia (instalación)'], ['Tipo', it.type ?? '—'],
+            ['Categoría', it.category ?? '—'], ['País', it.country || '—'],
+            ['Fuente', it.source ?? '—'],
+            ['Aviso', 'Geografía PÚBLICA estática · puede estar desactualizada · sin uso operacional (ADR-0017)'],
+          ]),
+        });
+      });
+
       updateCounts(d, payload);
       maybeSetupClock(payload);
 
@@ -462,7 +490,8 @@
       const c = document.getElementById('hudCounts');
       c.innerHTML = `SAT ${ (d.orbital||[]).length }  ·  AIR ${ (d.aerial||[]).length }  ·  ` +
         `NAV ${ (d.maritime||[]).length }  ·  BAL ${ (d.suborbital||[]).length }  ·  ` +
-        `EVT ${ (d.surface||[]).length }  ·  HEAT ${ (p.heatmap||[]).length }`;
+        `EVT ${ (d.surface||[]).length }  ·  HEAT ${ (p.heatmap||[]).length }  ·  ` +
+        `INST ${ (p.installations||[]).length }`;
     }
 
     // ── Time-slider: anima posiciones provistas en payload.series ─────
@@ -499,7 +528,7 @@
     document.getElementById('lyr-atmosphere').addEventListener('change', e => { scene.skyAtmosphere.show = e.target.checked; scene.globe.showGroundAtmosphere = e.target.checked; });
     document.getElementById('lyr-lighting').addEventListener('change', e => { scene.globe.enableLighting = e.target.checked; });
     // Las capas de dominio/heatmap/range repintan las entidades preservando cámara
-    ['orbital', 'aerial', 'maritime', 'suborbital', 'surface', 'heatmap', 'range'].forEach(id => {
+    ['orbital', 'aerial', 'maritime', 'suborbital', 'surface', 'heatmap', 'range', 'installations'].forEach(id => {
       document.getElementById('lyr-' + id).addEventListener('change', () => { if (lastPayload) renderAll(lastPayload); });
     });
 

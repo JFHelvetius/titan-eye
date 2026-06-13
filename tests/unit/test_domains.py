@@ -7,7 +7,7 @@ from titan_eye.core.domains import DOMAIN_UNCERTAINTY_NOTE, Domain
 
 def test_domains_exist() -> None:
     assert {d.value for d in Domain} == {
-        "orbital", "suborbital", "aerial", "surface", "maritime"
+        "orbital", "suborbital", "aerial", "surface", "maritime", "reference"
     }
 
 

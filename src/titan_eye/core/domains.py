@@ -36,6 +36,10 @@ class Domain(str, Enum):
     AERIAL = "aerial"
     SURFACE = "surface"
     MARITIME = "maritime"
+    # REFERENCE no es un dominio de ACTIVIDAD observable: es un tag para geografía
+    # estática pública (bases, infraestructura — ADR-0017). Se incluye aquí solo
+    # para etiquetar su RawArtifact; no participa de la analítica de actividad.
+    REFERENCE = "reference"
 
 
 # Régimen de incertidumbre cualitativo por dominio. Es un recordatorio de
@@ -62,5 +66,10 @@ DOMAIN_UNCERTAINTY_NOTE: dict[Domain, str] = {
         "AIS autodeclarado por el buque. Trivialmente falsificable; los buques de "
         "guerra apagan o falsean el AIS con frecuencia. Los submarinos sumergidos "
         "no transmiten. Ausencia ≠ inexistencia; presencia = afirmación del buque."
+    ),
+    Domain.REFERENCE: (
+        "Geografía de referencia pública y estática (bases, infraestructura). "
+        "Ubicación afirmada por fuentes abiertas; puede estar desactualizada o ser "
+        "aproximada. No es actividad observable ni se usa para cómputo operacional."
     ),
 }
