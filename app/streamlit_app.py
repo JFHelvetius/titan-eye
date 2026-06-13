@@ -328,12 +328,40 @@ def _page_situation() -> None:
     if notes:
         st.markdown('<div class="te-warn">' + " · ".join(notes) + "</div>", unsafe_allow_html=True)
 
+    payload = _apply_filters(payload)
+
     _kpis(payload)
     components.html(globe_html(payload, height=820), height=840, scrolling=False)
     st.caption("Epistemología (P9): observed = punto nítido + error nominal · asserted = halo según "
                "resolución de geoloc · inferred = banda de incertidumbre (línea fina prohibida).")
     _domain_tables(payload)
     _proximity_panel(payload)
+
+
+def _apply_filters(payload: dict) -> dict:
+    """Filtro de vista por país y tipo (ADR-0018), transversal a todos los dominios."""
+    from titan_eye.analytics.filtering import (
+        available_countries,
+        available_kinds,
+        filter_payload,
+    )
+
+    countries = available_countries(payload)
+    kinds = available_kinds(payload)
+    if not countries and not kinds:
+        return payload
+
+    c1, c2 = st.columns(2)
+    with c1:
+        sel_c = st.multiselect("Filtrar por país / bandera", countries, default=[])
+    with c2:
+        sel_k = st.multiselect("Filtrar por tipo / clase", kinds, default=[])
+    if not sel_c and not sel_k:
+        return payload
+    filtered = filter_payload(payload, countries=sel_c or None, kinds=sel_k or None)
+    st.caption("Filtro de vista (ADR-0018): selecciona lo observado por país/tipo declarado. "
+               "No atribuye bando ni amenaza; país/tipo vacío = el dato no lo soporta.")
+    return filtered
 
 
 def _proximity_panel(payload: dict) -> None:

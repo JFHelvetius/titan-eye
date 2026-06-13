@@ -60,6 +60,7 @@ def _row_to_event(row: Any, idx: int, artifact: RawArtifact) -> ConflictEvent:
             geoloc_resolution=_resolution(row),
             event_type=str(row.get("event_type", "")),
             location_name=str(row.get("location_name", "")),
+            country=row.get("country") or None,
             reported_fatalities=int(row.get("reported_fatalities", 0) or 0),
             source=str(row.get("source", "")),
             source_url=str(row.get("source_url", "")),

@@ -39,6 +39,8 @@ def aerial_states_to_entries(states: list[AircraftState]) -> list[dict[str, Any]
             "speed_kt": round(s.velocity_ms * _MS_TO_KT, 0) if s.velocity_ms is not None else 0.0,
             "age_s": round(s.last_contact_age_s, 0) if s.last_contact_age_s is not None else 0.0,
             "origin": s.origin_country or "",
+            "country": s.origin_country or "",   # eje de filtro (ADR-0018)
+            "kind": "",                           # clase de aeronave: requiere ref DB (diferido)
         })
     return out
 
@@ -84,6 +86,8 @@ def orbital_elements_to_entries(
             "err_km": err_km,
             "owner": el.intl_designator or "",
             "track": track,
+            "country": "",   # el TLE no lleva operador/país (diferido: satcat)
+            "kind": "",      # clase de satélite: requiere satcat (diferido)
         })
     return out
 
@@ -124,6 +128,8 @@ def ballistic_trajectories_to_entries(
             "range_km": t.range_km,
             "band_km": t.band_km,
             "impact_dispersion_km": t.impact_dispersion_km,
+            "country": "",          # país de lanzamiento: solo si el reporte lo aporta (diferido)
+            "kind": "ballistic",
         })
     return out
 
@@ -157,8 +163,9 @@ def installations_to_entries(items: list[Installation]) -> list[dict[str, Any]]:
             "lon": it.longitude,
             "lat": it.latitude,
             "type": it.installation_type.value,
-            "category": it.category.value,
-            "country": it.country or "",
+            "category": it.category.value,        # militar/infra (lo usa el globo para colorear)
+            "country": it.country or "",          # eje de filtro (ADR-0018)
+            "kind": it.installation_type.value,   # eje de filtro: tipo de instalación
             "source": it.source or "(referencia pública)",
         })
     return out
@@ -195,6 +202,8 @@ def vessels_to_entries(vessels: list[VesselPosition]) -> list[dict[str, Any]]:
             "speed_kt": round(v.speed_knots, 1) if v.speed_knots is not None else 0.0,
             "nav_status": v.nav_status or "",
             "age_s": round(v.last_contact_age_s, 0) if v.last_contact_age_s is not None else 0.0,
+            "country": v.flag or "",              # eje de filtro: bandera (ADR-0018)
+            "kind": v.vessel_type.value,          # clase de buque
         })
     return out
 
@@ -232,6 +241,8 @@ def conflict_events_to_entries(events: list[ConflictEvent]) -> list[dict[str, An
             "date": e.event_date.isoformat(),
             "events_count": 1,
             "geoloc_res": e.geoloc_resolution.value,
+            "country": e.country or "",           # eje de filtro: país del reporte (ADR-0018)
+            "kind": e.event_type or "",           # tipo de evento
         })
     return out
 

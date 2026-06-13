@@ -136,9 +136,18 @@ Geografía pública estática (ADR-0017), no un dominio de actividad.
 - [x] Normalizador, repo Parquet, `verify-installations`, CLI `ingest installations`. Capa "Bases e infraestructura" en el globo (militar ▣ / infra ◆) + tabla en el dashboard.
 - [x] **Frontera dura:** solo fuentes públicas; etiqueta `asserted` + nota de posible desactualización; **excluidas del cálculo de proximidad y de todo cómputo operacional** (sin proximidad-a-objetivo, sin scoring de vulnerabilidad). Solo display.
 
+## Fase 9 — Filtro transversal por país y tipo  *(núcleo cerrado)*
+
+Hace el seguimiento *operable* (ADR-0018): filtro de vista, no inferencia.
+
+- [x] Cada entrada del globo expone `country` y `kind` (clase filtrable). `filter_payload` puro + `available_countries`/`available_kinds`.
+- [x] País real donde el dato lo soporta: aéreo (origin_country), marítimo (bandera), superficie (país del reporte — campo nuevo en `ConflictEvent`), instalaciones (país). Orbital/suborbital vacíos (faltan satcat/reporte) — declarado, no inventado.
+- [x] Multiselect país + tipo en el dashboard; aplica a los cinco dominios + referencia.
+- [x] **Sin atribución de bando ni amenaza (ADR-0003):** solo país declarado y clase técnica; no hay "aliado/enemigo".
+
 > **Capas alineadas pendientes (planificables cuando se quiera):** noticias/RRSS
 > verificadas geolocalizadas, línea temporal histórica, fichas país/alianzas,
-> categorización por tipo (caza/bombardero; recon/sigint) y filtro por país.
+> clasificación por tipo de aeronave/satélite (requiere reference DB / satcat).
 
 ---
 

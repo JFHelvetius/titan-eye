@@ -26,6 +26,7 @@ _ARROW_SCHEMA = pa.schema([
     pa.field("geoloc_resolution", pa.string(), nullable=False),
     pa.field("event_type", pa.string(), nullable=False),
     pa.field("location_name", pa.string(), nullable=False),
+    pa.field("country", pa.string(), nullable=True),
     pa.field("reported_fatalities", pa.int64(), nullable=False),
     pa.field("source", pa.string(), nullable=False),
     pa.field("source_url", pa.string(), nullable=False),

@@ -44,6 +44,7 @@ class ConflictEvent(BaseModel):
 
     event_type: str = ""
     location_name: str = ""
+    country: str | None = None
     # Atributo descriptivo del reporte. NO es peso del mapa de calor (ADR-0003).
     reported_fatalities: int = 0
 
