@@ -37,14 +37,15 @@ tomada** (ADR-0000, P6).
 | [0013](0013-situation-case-v01.md) | Caso de situación portable y verificable v0.1 | Aceptado |
 | [0014](0014-multidomain-proximity-v01.md) | Proximidad geométrica multidominio v0.1 | Aceptado |
 | [0015](0015-maritime-ais-v01.md) | Dominio marítimo — buques y flotas (AIS) v0.1 | Aceptado |
+| [0016](0016-tension-index-alerts-v01.md) | Índice de tensión y alertas de actividad observable v0.1 | Aceptado |
 
 ## Planificados (no escritos aún)
 
 | ADR | Título tentativo |
 |-----|------------------|
-| 0016 | Gestión de secretos (tokens OpenSky, ACLED/AIS API en vivo) |
-| 0017 | Reproducibilidad bajo entorno declarado |
-| 0018 | Cierre formal de fases / contrato congelado |
+| 0017 | Gestión de secretos (tokens OpenSky, ACLED/AIS API en vivo) |
+| 0018 | Capas de referencia OSINT (bases, infraestructura, fichas país/alianzas) |
+| 0019 | Reproducibilidad bajo entorno declarado / cierre formal con contrato congelado |
 
 > Nota de numeración: 0009 (aéreo) se aceptó antes que 0008 (storage). Los
 > números reflejan orden de aceptación, no de dependencia; no se reordenan.

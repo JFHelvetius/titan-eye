@@ -115,14 +115,22 @@ geométrica sin veredictos, y el dashboard de situación. Lo que queda son
 reproducibilidad formalizada (ADR-0017), y el cierre formal con contrato congelado
 (ADR-0018), análogo al contrato criptográfico v1.0.0 de Orbital Sentinel.
 
-> **Capas pedidas y diferidas con su frontera ética (ADR-0000/0003):** bases e
-> infraestructura como referencia pública estática (OSINT), capa de noticias/RRSS
-> verificadas, línea temporal histórica y fichas país/alianzas son extensiones
-> alineadas y planificables. En cambio, un "índice de tensión 0-100", "riesgo
-> geopolítico", "alertas de amenaza" o "zonas de afectación" son **scoring de
-> amenaza** y quedan como **No-objetivo permanente** salvo supersesión explícita de
-> ADR-0000. Su única forma admisible sería descriptiva (volumen de actividad
-> observable reportada, con metodología declarada), nunca predictiva ni de amenaza.
+## Fase 7 — Capa de inteligencia: índice de tensión y alertas  *(núcleo cerrado)*
+
+Headline de la visión de producto, construido en su **forma honesta** (ADR-0016).
+
+- [x] **Titan Tension Index (TGTI, 0-100)**: composición transparente de actividad militar OBSERVABLE (eventos, balística, aeronaves, buques) con normalización saturante y pesos declarados. Cada índice trae su **desglose completo** y su metodología — reproducible y editable. Etiqueta epistémica = la más débil de sus componentes.
+- [x] **Alertas descriptivas**: reportan actividad ya observable/pública (balística presente, concentración naval, eventos de conflicto, hotspot), con su procedencia. **No predicen ni emiten veredictos de amenaza.**
+- [x] Pestaña "Índice & Alertas" en el dashboard. `analytics/intelligence.py`, 11 tests.
+
+**Frontera mantenida (ADR-0000/0003/0016):** el TGTI mide actividad observable, no
+intención ni futuro; es el patrón `Pc`-con-asunciones de Orbital Sentinel (ADR-0020)
+aplicado aquí. **Sin** soluciones de targeting ni apoyo a decisión de fuego — esa
+sigue siendo la única línea dura, y ninguna capa pedida la cruza.
+
+> **Capas alineadas pendientes (planificables cuando se quiera):** bases e
+> infraestructura como referencia pública estática (OSINT), noticias/RRSS
+> verificadas geolocalizadas, línea temporal histórica, fichas país/alianzas.
 
 ---
 

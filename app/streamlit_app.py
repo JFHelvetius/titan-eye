@@ -336,7 +336,7 @@ def _page_verify() -> None:
         "(re-normalizar el Raw reproduce las mismas filas)."
     )
     root = st.text_input("Raíz de datos local (la generada con `--persist`)", value="./data")
-    domain = st.selectbox("Dominio", ["aerial", "orbital", "surface"])
+    domain = st.selectbox("Dominio", ["aerial", "orbital", "surface", "maritime"])
     if st.button("Verificar integridad"):
         try:
             from pathlib import Path
@@ -353,11 +353,16 @@ def _page_verify() -> None:
                 from titan_eye.provenance.integrity import verify_orbital_integrity
                 rep = verify_orbital_integrity(
                     OrbitalElementsRepository(Path(root) / "normalized" / "orbital"), cache)
-            else:
+            elif domain == "surface":
                 from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
                 from titan_eye.provenance.integrity import verify_surface_integrity
                 rep = verify_surface_integrity(
                     ConflictEventsRepository(Path(root) / "normalized" / "surface"), cache)
+            else:
+                from titan_eye.catalog.vessel_positions_repo import VesselPositionsRepository
+                from titan_eye.provenance.integrity import verify_maritime_integrity
+                rep = verify_maritime_integrity(
+                    VesselPositionsRepository(Path(root) / "normalized" / "maritime"), cache)
             (st.success if rep.ok else st.error)(
                 f"{'✓ Íntegro' if rep.ok else '✗ Violación'} · {rep.n_states} filas · "
                 f"{rep.n_source_hashes} snapshots · huérfanos: {len(rep.orphan_source_hashes)} · "
@@ -365,6 +370,42 @@ def _page_verify() -> None:
             )
         except Exception as exc:
             st.error(f"{type(exc).__name__}: {exc}")
+
+
+def _page_intel() -> None:
+    from titan_eye.analytics.intelligence import compute_tension_index, generate_alerts
+
+    payload = st.session_state.get("te_payload") or demo_payload()
+    idx = compute_tension_index(payload)
+    alerts = generate_alerts(payload)
+
+    st.subheader("Titan Tension Index (TGTI)")
+    c1, c2 = st.columns([1, 3])
+    with c1:
+        st.metric("TGTI", f"{idx.value:.0f} / 100")
+    with c2:
+        st.progress(min(1.0, idx.value / 100.0))
+    st.markdown('<div class="te-warn">' + idx.note + "</div>", unsafe_allow_html=True)
+
+    st.markdown("**Desglose** (transparente y reproducible · ADR-0016)")
+    st.dataframe([{
+        "componente": c.label, "conteo": c.raw_count, "peso": c.weight,
+        "escala": c.saturation_scale, "normalizado": c.normalized,
+        "contribución": c.contribution, "epistemología": c.epistemic_label.value,
+    } for c in idx.components], use_container_width=True, hide_index=True)
+    st.caption(f"Metodología: {idx.methodology}  ·  epistemología del índice: "
+               f"**{idx.weakest_epistemic.value}** (la más débil de sus componentes).")
+
+    st.subheader("Alertas")
+    if not alerts:
+        st.caption("Sin actividad por encima de los umbrales en la situación actual.")
+    else:
+        st.dataframe([{
+            "tipo": a.kind, "mensaje": a.message, "dominio": a.domain,
+            "conteo": a.count, "epistemología": a.epistemic_label.value,
+        } for a in alerts], use_container_width=True, hide_index=True)
+        st.caption("Las alertas **describen actividad ya observable/reportada**, no predicen "
+                   "ni emiten veredictos de amenaza (ADR-0016).")
 
 
 def _page_about() -> None:
@@ -397,9 +438,12 @@ def main() -> None:
     _css()
     st.markdown("# 🛰 Titan Eye <span class='te-tag'>· panel de situación multidominio</span>",
                 unsafe_allow_html=True)
-    tab_sit, tab_verify, tab_about = st.tabs(["Panel de situación", "Verificación", "Acerca de"])
+    tab_sit, tab_intel, tab_verify, tab_about = st.tabs(
+        ["Panel de situación", "Índice & Alertas", "Verificación", "Acerca de"])
     with tab_sit:
         _page_situation()
+    with tab_intel:
+        _page_intel()
     with tab_verify:
         _page_verify()
     with tab_about:
