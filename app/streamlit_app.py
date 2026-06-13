@@ -53,9 +53,26 @@ def _empty_payload() -> dict:
         "domains": {"orbital": [], "aerial": [], "maritime": [], "suborbital": [], "surface": []},
         "heatmap": [],
         "installations": [],
+        "osint": [],
         "layers": {"orbital": True, "aerial": True, "maritime": True, "suborbital": True,
-                   "surface": True, "heatmap": False, "range": False, "installations": True},
+                   "surface": True, "heatmap": False, "range": False, "installations": True,
+                   "osint": True},
     }
+
+
+def _fetch_osint(raw: bytes):
+    from titan_eye.catalog.normalizers.osint import normalize_osint
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+    from titan_eye.orchestration.globe_payload import osint_to_entries
+
+    art = RawArtifact.seal(
+        source_id="osint.items", domain=Domain.OSINT, request_url="upload://osint",
+        fetched_at=datetime.now(UTC), payload=raw, epistemic_label=EpistemicLabel.ASSERTED,
+    )
+    items = normalize_osint(art)
+    return osint_to_entries(items), {"hash": art.content_hash, "n": len(items)}
 
 
 def _fetch_installations(raw: bytes):
@@ -191,6 +208,10 @@ def _sidebar_controls() -> dict:
     cfg["installations_file"] = st.sidebar.file_uploader("Dataset de instalaciones (JSON)", type=["json"],
                                                         disabled=not cfg["installations"])
 
+    cfg["osint"] = st.sidebar.checkbox("✎ OSINT · noticias/RRSS", value=False)
+    cfg["osint_file"] = st.sidebar.file_uploader("Dataset OSINT (JSON)", type=["json"],
+                                                disabled=not cfg["osint"])
+
     cfg["go"] = st.sidebar.button("⟳ Actualizar panel", use_container_width=True, type="primary")
     st.sidebar.caption("Sin selección, el panel muestra datos de **demostración**.")
     return cfg
@@ -252,7 +273,16 @@ def _build_combined(cfg) -> tuple[dict, list[str], list[str]]:
         except Exception as exc:
             errors.append(f"Instalaciones: {type(exc).__name__}: {exc}")
 
-    any_data = any(payload["domains"].values()) or payload["heatmap"] or payload.get("installations")
+    if cfg["osint"] and cfg["osint_file"] is not None:
+        try:
+            entries, meta = _fetch_osint(cfg["osint_file"].getvalue())
+            payload["osint"] = entries
+            notes.append(f"OSINT: {meta['n']} ítems (asserted, procedencia · no verificado)")
+        except Exception as exc:
+            errors.append(f"OSINT: {type(exc).__name__}: {exc}")
+
+    any_data = (any(payload["domains"].values()) or payload["heatmap"]
+                or payload.get("installations") or payload.get("osint"))
     if not any_data:
         return demo_payload(), ["Mostrando datos de demostración sintéticos."], errors
     return payload, notes, errors
@@ -311,6 +341,14 @@ def _domain_tables(payload: dict) -> None:
                           for r in inst], use_container_width=True, hide_index=True)
             st.caption("Geografía PÚBLICA estática (OSM/Wikipedia/FAS). Puede estar desactualizada. "
                        "Solo display: sin proximidad-a-objetivo ni cómputo operacional (ADR-0017).")
+    if payload.get("osint"):
+        osint = payload["osint"]
+        with st.expander(f"✎ OSINT noticias/RRSS ({len(osint)}) · asserted", expanded=False):
+            st.dataframe([{k: r[k] for k in ("id", "name", "source", "source_tier",
+                                             "country", "published_at")}
+                          for r in osint], use_container_width=True, hide_index=True)
+            st.caption("AFIRMACIONES de fuentes con procedencia. Titan Eye **no verifica veracidad** "
+                       "ni puntúa credibilidad; el tier describe el tipo de fuente (ADR-0020).")
 
 
 def _page_situation() -> None:

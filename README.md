@@ -3,8 +3,8 @@
 [![ci](https://github.com/JFHelvetius/titan-eye/actions/workflows/ci.yml/badge.svg)](https://github.com/JFHelvetius/titan-eye/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
-[![tests](https://img.shields.io/badge/tests-140%20passing-brightgreen.svg)](tests/)
-[![ADRs](https://img.shields.io/badge/ADRs-19-informational.svg)](docs/adr/)
+[![tests](https://img.shields.io/badge/tests-148%20passing-brightgreen.svg)](tests/)
+[![ADRs](https://img.shields.io/badge/ADRs-20-informational.svg)](docs/adr/)
 
 **Infraestructura verificable para afirmaciones sobre actividad militar observable con datos públicos.**
 

@@ -95,6 +95,17 @@ def demo_payload() -> dict[str, Any]:
              "type": "nuclear_plant", "category": "critical_infrastructure",
              "country": "Borealia", "kind": "nuclear_plant", "source": "(OSM sintético)"},
         ],
+        "osint": [
+            {"id": "N1", "name": "Reporte demo de agencia", "lon": 37.5, "lat": 47.9,
+             "source": "(agencia sintética)", "source_url": "", "source_tier": "news_agency",
+             "published_at": "2026-06-10T08:00:00Z", "country": "Borealia",
+             "kind": "news_agency"},
+            {"id": "N2", "name": "Publicación RRSS demo", "lon": 36.9, "lat": 48.3,
+             "source": "(RRSS sintética)", "source_url": "", "source_tier": "social_media",
+             "published_at": "2026-06-10T09:30:00Z", "country": "Borealia",
+             "kind": "social_media"},
+        ],
         "layers": {"orbital": True, "aerial": True, "maritime": True, "suborbital": True,
-                   "surface": True, "heatmap": False, "range": False, "installations": True},
+                   "surface": True, "heatmap": False, "range": False, "installations": True,
+                   "osint": True},
     }

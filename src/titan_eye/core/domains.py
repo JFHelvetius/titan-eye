@@ -40,6 +40,9 @@ class Domain(str, Enum):
     # estática pública (bases, infraestructura — ADR-0017). Se incluye aquí solo
     # para etiquetar su RawArtifact; no participa de la analítica de actividad.
     REFERENCE = "reference"
+    # OSINT tampoco es un dominio físico: es un tag para información (noticias/RRSS
+    # geolocalizadas, ADR-0020). Afirmaciones de fuentes, no observación física.
+    OSINT = "osint"
 
 
 # Régimen de incertidumbre cualitativo por dominio. Es un recordatorio de
@@ -71,5 +74,10 @@ DOMAIN_UNCERTAINTY_NOTE: dict[Domain, str] = {
         "Geografía de referencia pública y estática (bases, infraestructura). "
         "Ubicación afirmada por fuentes abiertas; puede estar desactualizada o ser "
         "aproximada. No es actividad observable ni se usa para cómputo operacional."
+    ),
+    Domain.OSINT: (
+        "Noticias/RRSS geolocalizadas: afirmación de una fuente, no verdad "
+        "verificada por Titan Eye. El tier de fuente describe el TIPO de fuente, no "
+        "su veracidad. La geolocalización de noticias/RRSS es ruidosa y manipulable."
     ),
 }

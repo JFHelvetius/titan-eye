@@ -28,9 +28,12 @@ from titan_eye.catalog.normalizers.ais import normalize_ais
 from titan_eye.catalog.normalizers.conflict_events import normalize_conflict_events
 from titan_eye.catalog.normalizers.installations import normalize_installations
 from titan_eye.catalog.normalizers.opensky_states import normalize_states
+from titan_eye.catalog.normalizers.osint import normalize_osint
 from titan_eye.catalog.normalizers.tle import normalize_tles
 from titan_eye.catalog.orbital import OrbitalElement
 from titan_eye.catalog.orbital_elements_repo import OrbitalElementsRepository
+from titan_eye.catalog.osint import OsintItem
+from titan_eye.catalog.osint_repo import OsintRepository
 from titan_eye.catalog.surface import ConflictEvent
 from titan_eye.catalog.vessel_positions_repo import VesselPositionsRepository
 from titan_eye.core.identity import content_hash_obj
@@ -52,7 +55,7 @@ class IntegrityReport:
 
 
 def _row_identity(
-    row: AircraftState | OrbitalElement | ConflictEvent | VesselPosition | Installation,
+    row: AircraftState | OrbitalElement | ConflictEvent | VesselPosition | Installation | OsintItem,
 ) -> str:
     """Hash canónico del contenido SEMÁNTICO de una fila Normalized (estable
     bajo reproceso). El content_hash_source y schema_version forman parte de la
@@ -212,6 +215,37 @@ def verify_maritime_integrity(
         n_source_hashes=len(source_hashes),
         orphan_source_hashes=orphans,
         reproducibility_mismatches=mismatches,
+    )
+
+
+def verify_osint_integrity(
+    repo: OsintRepository,
+    cache: FetchCache,
+    *,
+    check_reproducibility: bool = True,
+) -> IntegrityReport:
+    """Espejo OSINT: I1 referencial + I2 reproducibilidad del parseo (ADR-0020)."""
+    items = list(repo.iter_all())
+    source_hashes = sorted({i.content_hash_source for i in items})
+    orphans: list[str] = [h for h in source_hashes if not cache.has_blob(h)]
+    mismatches: list[str] = []
+    if check_reproducibility:
+        by_source: dict[str, list[OsintItem]] = {}
+        for it in items:
+            by_source.setdefault(it.content_hash_source, []).append(it)
+        for h in source_hashes:
+            if h in orphans:
+                continue
+            artifact = cache.get_by_content_hash(h)
+            if artifact is None:
+                orphans.append(h)
+                continue
+            reproduced = normalize_osint(artifact)
+            if {_row_identity(i) for i in reproduced} != {_row_identity(i) for i in by_source[h]}:
+                mismatches.append(h)
+    return IntegrityReport(
+        n_states=len(items), n_source_hashes=len(source_hashes),
+        orphan_source_hashes=orphans, reproducibility_mismatches=mismatches,
     )
 
 

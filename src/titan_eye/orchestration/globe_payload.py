@@ -18,6 +18,7 @@ from titan_eye.catalog.ballistic import BallisticTrajectory
 from titan_eye.catalog.installations import Installation
 from titan_eye.catalog.maritime import VesselPosition
 from titan_eye.catalog.orbital import SGP4_BASELINE_KM, OrbitalElement
+from titan_eye.catalog.osint import OsintItem
 from titan_eye.catalog.surface import ConflictEvent
 
 _MS_TO_KT = 1.943_844
@@ -147,6 +148,42 @@ def suborbital_payload(
         "heatmap": [],
         "layers": layers or {"suborbital": True, "orbital": False, "aerial": False,
                              "surface": False, "heatmap": False, "range": False},
+    }
+
+
+def osint_to_entries(items: list[OsintItem]) -> list[dict[str, Any]]:
+    """list[OsintItem] -> entradas 'osint' del payload (capa de noticias/RRSS).
+
+    `asserted`: afirmación de una fuente con procedencia. El tier describe el tipo
+    de fuente, no su veracidad (ADR-0020). Titan Eye no verifica el contenido."""
+    out: list[dict[str, Any]] = []
+    for it in items:
+        out.append({
+            "id": it.item_id,
+            "name": it.title,
+            "lon": it.longitude,
+            "lat": it.latitude,
+            "source": it.source or "(fuente OSINT)",
+            "source_url": it.source_url,
+            "source_tier": it.source_tier.value,
+            "published_at": it.published_at.isoformat() if it.published_at else "",
+            "country": it.country or "",   # eje de filtro (ADR-0018)
+            "kind": it.source_tier.value,  # eje de filtro: tier de fuente
+        })
+    return out
+
+
+def osint_payload(
+    items: list[OsintItem], *, layers: dict[str, bool] | None = None
+) -> dict[str, Any]:
+    """Payload del globo con solo la capa OSINT."""
+    return {
+        "domains": {"orbital": [], "aerial": [], "maritime": [], "suborbital": [], "surface": []},
+        "heatmap": [],
+        "osint": osint_to_entries(items),
+        "layers": layers or {"osint": True, "orbital": False, "aerial": False,
+                             "maritime": False, "suborbital": False, "surface": False,
+                             "heatmap": False, "range": False, "installations": False},
     }
 
 

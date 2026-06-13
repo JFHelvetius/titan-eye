@@ -153,9 +153,17 @@ Hace el seguimiento *operable* (ADR-0018): filtro de vista, no inferencia.
 - [x] Loader desde el data-root (superficie→event_date; aéreo/marítimo→día de snapshot). CLI `timeline`. Pestaña "Línea temporal" en el dashboard (gráfica de actividad + slider de día con replay en el globo).
 - [x] **Honestidad (P2):** un día sin datos está **vacío**, no se interpola — vacío = "no se capturó", no "sin actividad". Orbital/suborbital/instalaciones fuera de v0.1 (propagación / sin fecha de evento / estático), declarado.
 
-> **Capas alineadas pendientes (planificables cuando se quiera):** noticias/RRSS
-> verificadas geolocalizadas, fichas país/alianzas, clasificación por tipo de
-> aeronave/satélite (requiere reference DB / satcat).
+## Fase 11 — Capa OSINT: noticias y RRSS geolocalizadas  *(núcleo cerrado)*
+
+Inteligencia narrativa con procedencia (ADR-0020), no veredicto de veracidad.
+
+- [x] `OsintItem` (`asserted`) con `source_tier` (news_agency/government/local_media/social_media). `Domain.OSINT` como tag del Raw.
+- [x] Normalizador, repo Parquet, `verify-osint`, CLI `ingest osint`. Capa "Noticias/RRSS" en el globo (marcador ✎ con enlace a la fuente) + tabla + filtro (kind=tier).
+- [x] **Honestidad dura (ADR-0020):** Titan Eye **no verifica veracidad** ni puntúa credibilidad/desinformación. Garantiza **procedencia** (qué fuente, cuándo, URL, hash); el tier describe el TIPO de fuente, no su verdad. Sin sello "verificado por Titan Eye".
+
+> **Capas alineadas pendientes (planificables cuando se quiera):** fichas
+> país/alianzas (referencia pública), clasificación por tipo de aeronave/satélite
+> (requiere reference DB / satcat).
 
 ---
 

@@ -121,6 +121,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_maritime.add_argument("--persist", action="store_true",
                             help="Persiste los buques en Parquet (requiere --data-root).")
 
+    p_osint = ingest_sub.add_parser("osint", help="Capa OSINT: noticias/RRSS geolocalizadas")
+    p_osint.add_argument("--file", required=True,
+                         help="Fichero JSON de ítems OSINT (fuentes públicas).")
+    p_osint.add_argument("--data-root", default=None, help="Raíz de datos local (para --persist).")
+    p_osint.add_argument("--persist", action="store_true",
+                         help="Persiste los ítems en Parquet (requiere --data-root).")
+
     p_inst = ingest_sub.add_parser("installations",
                                    help="Referencia: bases e infraestructura (OSINT estático)")
     p_inst.add_argument("--file", required=True,
@@ -146,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bal.add_argument("--persist", action="store_true",
                        help="Persiste la trayectoria reconstruida (requiere --data-root).")
 
-    for dom in ("aerial", "orbital", "surface", "maritime", "installations"):
+    for dom in ("aerial", "orbital", "surface", "maritime", "installations", "osint"):
         pv = sub.add_parser(f"verify-{dom}", help=f"Verifica integridad de la cadena {dom}")
         pv.add_argument("--data-root", required=True, help="Raíz de datos local a verificar.")
         pv.add_argument("--no-reproducibility", action="store_true",
@@ -188,6 +195,8 @@ def cli_entry_point(argv: list[str] | None = None) -> int:
             return _cmd_ingest_maritime(args)
         if args.command == "ingest" and args.domain == "installations":
             return _cmd_ingest_installations(args)
+        if args.command == "ingest" and args.domain == "osint":
+            return _cmd_ingest_osint(args)
         if args.command == "heatmap":
             return _cmd_heatmap(args)
         if args.command == "reconstruct-ballistic":
@@ -196,6 +205,8 @@ def cli_entry_point(argv: list[str] | None = None) -> int:
             return _cmd_verify(args, domain=args.command.split("-", 1)[1])
         if args.command == "verify-installations":
             return _cmd_verify_installations(args)
+        if args.command == "verify-osint":
+            return _cmd_verify_osint(args)
         if args.command == "build-case":
             return _cmd_build_case(args)
         if args.command == "verify-case":
@@ -466,6 +477,72 @@ def _cmd_ingest_installations(args: argparse.Namespace) -> int:
         summary["persisted_total"] = repo.count()
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
+
+
+def run_ingest_osint(*, artifact) -> tuple[dict[str, Any], list]:
+    """Normaliza un dataset OSINT sellado. No toca red. (resumen, items)."""
+    from titan_eye.catalog.normalizers.osint import normalize_osint
+
+    items = normalize_osint(artifact)
+    by_tier: dict[str, int] = {}
+    for it in items:
+        by_tier[it.source_tier.value] = by_tier.get(it.source_tier.value, 0) + 1
+    summary = {
+        "layer": "osint",
+        "content_hash": artifact.content_hash,
+        "epistemic_label": artifact.epistemic_label.value,   # asserted
+        "n_items": len(items),
+        "by_source_tier": by_tier,
+        "note": ("Afirmaciones de fuentes con procedencia. Titan Eye NO verifica "
+                 "veracidad ni puntúa credibilidad; el tier describe el tipo de "
+                 "fuente, no su verdad (ADR-0020)."),
+    }
+    return summary, items
+
+
+def _cmd_ingest_osint(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from titan_eye.core.domains import Domain
+    from titan_eye.ingestion.sources.local_report import seal_report_file
+
+    artifact = seal_report_file(
+        args.file, domain=Domain.OSINT, source_id="osint.items",
+        license_note="OSINT de fuentes públicas — respetar atribución y TOS de cada fuente.",
+    )
+    summary, items = run_ingest_osint(artifact=artifact)
+    if args.persist:
+        if not args.data_root:
+            raise TitanEyeError("--persist requiere --data-root")
+        from titan_eye.catalog.osint_repo import OsintRepository
+        from titan_eye.ingestion.cache import FetchCache
+        FetchCache(Path(args.data_root) / "cache").put(artifact, cache_key=artifact.content_hash)
+        repo = OsintRepository(Path(args.data_root) / "osint")
+        summary["snapshot_written"] = repo.insert_snapshot(items)
+        summary["persisted_total"] = repo.count()
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_verify_osint(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from titan_eye.catalog.osint_repo import OsintRepository
+    from titan_eye.ingestion.cache import FetchCache
+    from titan_eye.provenance.integrity import verify_osint_integrity
+
+    root = Path(args.data_root)
+    report = verify_osint_integrity(
+        OsintRepository(root / "osint"), FetchCache(root / "cache"),
+        check_reproducibility=not args.no_reproducibility,
+    )
+    print(json.dumps({
+        "ok": report.ok, "n_states": report.n_states,
+        "n_source_hashes": report.n_source_hashes,
+        "orphan_source_hashes": report.orphan_source_hashes,
+        "reproducibility_mismatches": report.reproducibility_mismatches,
+    }, indent=2, ensure_ascii=False))
+    return 0 if report.ok else 1
 
 
 def _cmd_verify_installations(args: argparse.Namespace) -> int:

@@ -40,8 +40,9 @@ def filter_payload(
     domains = out.get("domains", {})
     for dom in _DOMAINS:
         domains[dom] = [e for e in domains.get(dom, []) if _keep(e, cset, kset)]
-    if "installations" in out:
-        out["installations"] = [e for e in out["installations"] if _keep(e, cset, kset)]
+    for layer in ("installations", "osint"):   # capas top-level filtrables
+        if layer in out:
+            out[layer] = [e for e in out[layer] if _keep(e, cset, kset)]
     return out
 
 
@@ -63,8 +64,9 @@ def _collect(payload: dict, key: str) -> set[str]:
             v = e.get(key, "")
             if v:
                 vals.add(v)
-    for e in payload.get("installations", []):
-        v = e.get(key, "")
-        if v:
-            vals.add(v)
+    for layer in ("installations", "osint"):
+        for e in payload.get(layer, []):
+            v = e.get(key, "")
+            if v:
+                vals.add(v)
     return vals

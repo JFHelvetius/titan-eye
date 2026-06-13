@@ -22,6 +22,7 @@
       --surface: #ef5d4c;     /* superficie asserted */
       --installation: #9aa7b4;/* referencia estática (bases/infraestructura) */
       --infra: #c9a227;       /* infraestructura crítica */
+      --osint: #a78bfa;       /* OSINT (noticias/RRSS) asserted */
       --neutral: #5b6b7a;
       --text: #e6e9ef;
     }
@@ -128,6 +129,7 @@
       <label><input type="checkbox" id="lyr-heatmap"><span class="dot" style="background:#b91c1c"></span> Mapa de calor (reportes)</label>
       <div class="lp-title">Referencia (OSINT estático)</div>
       <label><input type="checkbox" id="lyr-installations"><span class="dot" style="background:var(--installation)"></span> Bases e infraestructura</label>
+      <label><input type="checkbox" id="lyr-osint"><span class="dot" style="background:var(--osint)"></span> Noticias / RRSS (OSINT)</label>
       <div class="lp-title">Geometría y base</div>
       <label><input type="checkbox" id="lyr-range"> Anillos de alcance / horizonte</label>
       <label><input type="checkbox" id="lyr-labels"> Etiquetas (fronteras, ciudades)</label>
@@ -235,6 +237,7 @@
       surface: Cesium.Color.fromCssColorString('#ef5d4c'),
       installation: Cesium.Color.fromCssColorString('#9aa7b4'),
       infra: Cesium.Color.fromCssColorString('#c9a227'),
+      osint: Cesium.Color.fromCssColorString('#a78bfa'),
       amber: Cesium.Color.fromCssColorString('#d98a2b'),
     };
     document.getElementById('hudSub').textContent = 'Esri Dark (táctico)';
@@ -447,6 +450,27 @@
         });
       });
 
+      // OSINT — noticias/RRSS geolocalizadas (asserted, ADR-0020). Procedencia,
+      // no verdad: Titan Eye no verifica el contenido.
+      if (show('osint')) (payload.osint || []).forEach(o => {
+        viewer.entities.add({
+          name: o.name, position: Cesium.Cartesian3.fromDegrees(o.lon, o.lat, 0),
+          point: { pixelSize: 7, color: COL.osint.withAlpha(.9),
+                   outlineColor: Cesium.Color.BLACK.withAlpha(.6), outlineWidth: 1 },
+          label: { text: '✎', font: '12px sans-serif', fillColor: COL.osint,
+                   outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
+                   style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                   pixelOffset: new Cesium.Cartesian2(0, -11) },
+          description: `<h3>${o.name}</h3>` + epBadge('asserted') + htmlInfo([
+            ['Capa', 'OSINT (noticia/RRSS)'], ['Fuente', o.source ?? '—'],
+            ['Tier', o.source_tier ?? '—'], ['Publicado', o.published_at || '—'],
+            ['País', o.country || '—'],
+            ['URL', o.source_url ? `<a href="${o.source_url}" target="_blank">enlace</a>` : '—'],
+            ['Aviso', 'AFIRMACIÓN de una fuente · Titan Eye NO verifica veracidad (ADR-0020)'],
+          ]),
+        });
+      });
+
       updateCounts(d, payload);
       maybeSetupClock(payload);
 
@@ -491,7 +515,7 @@
       c.innerHTML = `SAT ${ (d.orbital||[]).length }  ·  AIR ${ (d.aerial||[]).length }  ·  ` +
         `NAV ${ (d.maritime||[]).length }  ·  BAL ${ (d.suborbital||[]).length }  ·  ` +
         `EVT ${ (d.surface||[]).length }  ·  HEAT ${ (p.heatmap||[]).length }  ·  ` +
-        `INST ${ (p.installations||[]).length }`;
+        `INST ${ (p.installations||[]).length }  ·  OSINT ${ (p.osint||[]).length }`;
     }
 
     // ── Time-slider: anima posiciones provistas en payload.series ─────
@@ -528,7 +552,7 @@
     document.getElementById('lyr-atmosphere').addEventListener('change', e => { scene.skyAtmosphere.show = e.target.checked; scene.globe.showGroundAtmosphere = e.target.checked; });
     document.getElementById('lyr-lighting').addEventListener('change', e => { scene.globe.enableLighting = e.target.checked; });
     // Las capas de dominio/heatmap/range repintan las entidades preservando cámara
-    ['orbital', 'aerial', 'maritime', 'suborbital', 'surface', 'heatmap', 'range', 'installations'].forEach(id => {
+    ['orbital', 'aerial', 'maritime', 'suborbital', 'surface', 'heatmap', 'range', 'installations', 'osint'].forEach(id => {
       document.getElementById('lyr-' + id).addEventListener('change', () => { if (lastPayload) renderAll(lastPayload); });
     });
 
