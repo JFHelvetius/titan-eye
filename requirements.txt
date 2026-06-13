@@ -1,9 +1,10 @@
 # Runtime del dashboard para Streamlit Community Cloud.
-# Pins amplios a propósito: dejan que pip elija wheels compatibles con el Python
-# que use Cloud (3.11–3.13). El paquete `titan_eye` se importa desde src/ vía el
+# Espejo del requirements.txt de Orbital Sentinel, que despliega correctamente en
+# la misma plataforma. El paquete `titan_eye` se importa desde src/ vía el
 # bootstrap de sys.path en app/streamlit_app.py (no hace falta instalarlo).
-streamlit>=1.35
+streamlit>=1.35,<2
+pandas>=2,<3
 pydantic>=2.7,<3
-duckdb>=1.0
-pyarrow>=15
-sgp4>=2.20
+duckdb>=1.0,<2
+pyarrow>=15.0
+sgp4>=2.20,<3
