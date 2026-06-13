@@ -63,6 +63,17 @@ def demo_payload() -> dict[str, Any]:
                  "source": "(ACLED sintético)", "event_type": "Shelling", "date": "2026-06-09",
                  "events_count": 3, "geoloc_res": "region"},
             ],
+            "maritime": [
+                {"id": "273000001", "name": "DEMO-CARRIER", "lon": 31.5, "lat": 44.2,
+                 "vessel_type": "carrier", "flag": "(sintético)", "course": 95, "speed_kt": 18,
+                 "nav_status": "under way", "age_s": 30},
+                {"id": "273000002", "name": "DEMO-DESTROYER", "lon": 32.1, "lat": 44.0,
+                 "vessel_type": "destroyer", "flag": "(sintético)", "course": 100, "speed_kt": 22,
+                 "nav_status": "under way", "age_s": 45},
+                {"id": "273000003", "name": "DEMO-FRIGATE", "lon": 30.9, "lat": 43.8,
+                 "vessel_type": "frigate", "flag": "(sintético)", "course": 270, "speed_kt": 14,
+                 "nav_status": "under way", "age_s": 120},
+            ],
         },
         "heatmap": [
             {"lon": 37.6, "lat": 48.0, "weight": 0.9},
@@ -70,6 +81,6 @@ def demo_payload() -> dict[str, Any]:
             {"lon": 35.0, "lat": 49.0, "weight": 0.7},
             {"lon": 38.5, "lat": 47.2, "weight": 0.6},
         ],
-        "layers": {"orbital": True, "aerial": True, "suborbital": True, "surface": True,
-                   "heatmap": False, "range": False},
+        "layers": {"orbital": True, "aerial": True, "maritime": True, "suborbital": True,
+                   "surface": True, "heatmap": False, "range": False},
     }

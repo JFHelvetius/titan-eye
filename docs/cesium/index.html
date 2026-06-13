@@ -18,6 +18,7 @@
       --hostile: #e63946;     /* suborbital inferred / eventos */
       --aircraft: #f0b429;    /* aéreo observed */
       --sat: #38bdf8;         /* orbital observed */
+      --naval: #34d399;       /* marítimo observed (AIS) */
       --surface: #ef5d4c;     /* superficie asserted */
       --neutral: #5b6b7a;
       --text: #e6e9ef;
@@ -119,6 +120,7 @@
       <div class="lp-title">Capas de dominio</div>
       <label><input type="checkbox" id="lyr-orbital" checked><span class="dot" style="background:var(--sat)"></span> Satélites (orbital)</label>
       <label><input type="checkbox" id="lyr-aerial" checked><span class="dot" style="background:var(--aircraft)"></span> Aeronaves (aéreo)</label>
+      <label><input type="checkbox" id="lyr-maritime" checked><span class="dot" style="background:var(--naval)"></span> Buques / flotas (naval)</label>
       <label><input type="checkbox" id="lyr-suborbital" checked><span class="dot" style="background:var(--hostile)"></span> Trayectorias balísticas</label>
       <label><input type="checkbox" id="lyr-surface" checked><span class="dot" style="background:var(--surface)"></span> Eventos de conflicto</label>
       <label><input type="checkbox" id="lyr-heatmap"><span class="dot" style="background:#b91c1c"></span> Mapa de calor (reportes)</label>
@@ -224,6 +226,7 @@
     const COL = {
       sat: Cesium.Color.fromCssColorString('#38bdf8'),
       aircraft: Cesium.Color.fromCssColorString('#f0b429'),
+      naval: Cesium.Color.fromCssColorString('#34d399'),
       hostile: Cesium.Color.fromCssColorString('#e63946'),
       surface: Cesium.Color.fromCssColorString('#ef5d4c'),
       amber: Cesium.Color.fromCssColorString('#d98a2b'),
@@ -317,6 +320,27 @@
         });
         entityByKey['air_' + a.id] = ent;
         if (show('range')) addRing(a.lon, a.lat, horizonRadiusMeters(a.alt_km || 0), COL.aircraft);
+      });
+
+      // MARITIME (observed, AIS autodeclarado) — buques en superficie
+      if (show('maritime')) (d.maritime || []).forEach(v => {
+        const stale = (v.age_s ?? 0) > 600;
+        const ent = viewer.entities.add({
+          name: v.name || v.id, position: Cesium.Cartesian3.fromDegrees(v.lon, v.lat, 0),
+          point: { pixelSize: 8, color: COL.naval.withAlpha(stale ? .5 : 1),
+                   outlineColor: Cesium.Color.BLACK.withAlpha(.6), outlineWidth: 1 },
+          label: { text: v.name || '', font: '10px JetBrains Mono, monospace', fillColor: COL.naval,
+                   outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                   pixelOffset: new Cesium.Cartesian2(8, 0) },
+          description: `<h3>${v.name || v.id}</h3>` + epBadge('observed') + htmlInfo([
+            ['Dominio', 'Marítimo (AIS)'], ['MMSI', v.id ?? '—'], ['Clase', v.vessel_type ?? '—'],
+            ['Bandera', v.flag || '—'], ['Rumbo', (v.course ?? 0).toFixed(0) + '°'],
+            ['Vel.', (v.speed_kt ?? 0).toFixed(1) + ' kn'], ['Estado', v.nav_status || '—'],
+            ['Último msg', (v.age_s ?? 0).toFixed(0) + ' s' + (stale ? ' ⚠ antiguo' : '')],
+            ['Aviso', 'AIS autodeclarado · falsificable; buques de guerra lo apagan; submarinos sumergidos no transmiten'],
+          ]),
+        });
+        entityByKey['nav_' + v.id] = ent;
       });
 
       // SUBORBITAL (inferred) — banda de incertidumbre, NUNCA línea fina
@@ -437,7 +461,8 @@
     function updateCounts(d, p) {
       const c = document.getElementById('hudCounts');
       c.innerHTML = `SAT ${ (d.orbital||[]).length }  ·  AIR ${ (d.aerial||[]).length }  ·  ` +
-        `BAL ${ (d.suborbital||[]).length }  ·  EVT ${ (d.surface||[]).length }  ·  HEAT ${ (p.heatmap||[]).length }`;
+        `NAV ${ (d.maritime||[]).length }  ·  BAL ${ (d.suborbital||[]).length }  ·  ` +
+        `EVT ${ (d.surface||[]).length }  ·  HEAT ${ (p.heatmap||[]).length }`;
     }
 
     // ── Time-slider: anima posiciones provistas en payload.series ─────
@@ -474,7 +499,7 @@
     document.getElementById('lyr-atmosphere').addEventListener('change', e => { scene.skyAtmosphere.show = e.target.checked; scene.globe.showGroundAtmosphere = e.target.checked; });
     document.getElementById('lyr-lighting').addEventListener('change', e => { scene.globe.enableLighting = e.target.checked; });
     // Las capas de dominio/heatmap/range repintan las entidades preservando cámara
-    ['orbital', 'aerial', 'suborbital', 'surface', 'heatmap', 'range'].forEach(id => {
+    ['orbital', 'aerial', 'maritime', 'suborbital', 'surface', 'heatmap', 'range'].forEach(id => {
       document.getElementById('lyr-' + id).addEventListener('change', () => { if (lastPayload) renderAll(lastPayload); });
     });
 

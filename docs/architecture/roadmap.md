@@ -94,15 +94,35 @@ procedencia. **Las cinco fases tienen núcleo operativo, 97 tests verdes.**
 
 ---
 
+## Fase 6 — Dominio marítimo (buques y flotas, AIS)  *(núcleo cerrado)*
+
+Quinto dominio (ADR-0015). La capa naval que se suele olvidar.
+
+- [x] `Domain.MARITIME` + `VesselPosition` (`observed`) con clases descriptivas (portaaviones, destructor, fragata, submarino, anfibio, patrullero, auxiliar).
+- [x] Normalizador AIS (`normalize_ais`), repo Parquet, verificador I1/I2 (`verify-maritime`), CLI `ingest maritime`. Capa naval en el globo + KPI + tabla + proximidad.
+- [x] **Honestidad reforzada (P2):** AIS autodeclarado y falsificable; buques de guerra lo apagan/falsean; submarinos sumergidos no transmiten; *ausencia ≠ inexistencia*. Declarado en el dominio y en el render.
+- [ ] AIS en vivo (clave en la mayoría de proveedores → ADR-0016 secretos). *(diferido)*
+
+**Estado:** cinco dominios (`observed`×3, `asserted`, `inferred`), 108 tests verdes.
+
 ## Estado del proyecto
 
-Las cinco fases del roadmap tienen su núcleo cerrado: los cuatro dominios
-(`observed`/`asserted`/`inferred`), la cadena de procedencia con verificadores de
-integridad, el caso de situación auditable por hash, y el dashboard de situación.
-Lo que queda son **profundizaciones declaradas, no fases nuevas**: APIs en vivo con
-clave (ADR-0015 secretos), reproducibilidad bajo entorno declarado formalizada
-(ADR-0016), y el cierre formal con contrato congelado (ADR-0017), análogo al
-contrato criptográfico v1.0.0 de Orbital Sentinel.
+El núcleo está cerrado: **cinco dominios** (orbital/aéreo/marítimo `observed`,
+superficie `asserted`, suborbital `inferred`), la cadena de procedencia con
+verificadores de integridad, el caso de situación auditable por hash, la proximidad
+geométrica sin veredictos, y el dashboard de situación. Lo que queda son
+**profundizaciones declaradas**: APIs en vivo con clave (ADR-0016 secretos),
+reproducibilidad formalizada (ADR-0017), y el cierre formal con contrato congelado
+(ADR-0018), análogo al contrato criptográfico v1.0.0 de Orbital Sentinel.
+
+> **Capas pedidas y diferidas con su frontera ética (ADR-0000/0003):** bases e
+> infraestructura como referencia pública estática (OSINT), capa de noticias/RRSS
+> verificadas, línea temporal histórica y fichas país/alianzas son extensiones
+> alineadas y planificables. En cambio, un "índice de tensión 0-100", "riesgo
+> geopolítico", "alertas de amenaza" o "zonas de afectación" son **scoring de
+> amenaza** y quedan como **No-objetivo permanente** salvo supersesión explícita de
+> ADR-0000. Su única forma admisible sería descriptiva (volumen de actividad
+> observable reportada, con metodología declarada), nunca predictiva ni de amenaza.
 
 ---
 

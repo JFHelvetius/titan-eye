@@ -35,6 +35,7 @@ class Domain(str, Enum):
     SUBORBITAL = "suborbital"
     AERIAL = "aerial"
     SURFACE = "surface"
+    MARITIME = "maritime"
 
 
 # Régimen de incertidumbre cualitativo por dominio. Es un recordatorio de
@@ -56,5 +57,10 @@ DOMAIN_UNCERTAINTY_NOTE: dict[Domain, str] = {
     Domain.SURFACE: (
         "Evento reportado por terceros. Es una afirmación con procedencia, no "
         "un hecho verificado. La geolocalización puede ser aproximada."
+    ),
+    Domain.MARITIME: (
+        "AIS autodeclarado por el buque. Trivialmente falsificable; los buques de "
+        "guerra apagan o falsean el AIS con frecuencia. Los submarinos sumergidos "
+        "no transmiten. Ausencia ≠ inexistencia; presencia = afirmación del buque."
     ),
 }

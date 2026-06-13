@@ -113,6 +113,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_surface.add_argument("--persist", action="store_true",
                            help="Persiste los eventos en Parquet (requiere --data-root).")
 
+    p_maritime = ingest_sub.add_parser("maritime", help="Dominio marítimo (buques / AIS)")
+    p_maritime.add_argument("--vessels", required=True,
+                            help="Fichero JSON de buques (AIS exportado).")
+    p_maritime.add_argument("--data-root", default=None,
+                            help="Raíz de datos local (para --persist).")
+    p_maritime.add_argument("--persist", action="store_true",
+                            help="Persiste los buques en Parquet (requiere --data-root).")
+
     p_heat = sub.add_parser("heatmap",
                             help="Mapa de calor KDE de densidad de eventos REPORTADOS (superficie)")
     p_heat.add_argument("--events", required=True, help="Fichero JSON de eventos.")
@@ -130,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bal.add_argument("--persist", action="store_true",
                        help="Persiste la trayectoria reconstruida (requiere --data-root).")
 
-    for dom in ("aerial", "orbital", "surface"):
+    for dom in ("aerial", "orbital", "surface", "maritime"):
         pv = sub.add_parser(f"verify-{dom}", help=f"Verifica integridad de la cadena {dom}")
         pv.add_argument("--data-root", required=True, help="Raíz de datos local a verificar.")
         pv.add_argument("--no-reproducibility", action="store_true",
@@ -164,11 +172,13 @@ def cli_entry_point(argv: list[str] | None = None) -> int:
             return _cmd_ingest_orbital(args)
         if args.command == "ingest" and args.domain == "surface":
             return _cmd_ingest_surface(args)
+        if args.command == "ingest" and args.domain == "maritime":
+            return _cmd_ingest_maritime(args)
         if args.command == "heatmap":
             return _cmd_heatmap(args)
         if args.command == "reconstruct-ballistic":
             return _cmd_reconstruct_ballistic(args)
-        if args.command in ("verify-aerial", "verify-orbital", "verify-surface"):
+        if args.command in ("verify-aerial", "verify-orbital", "verify-surface", "verify-maritime"):
             return _cmd_verify(args, domain=args.command.split("-", 1)[1])
         if args.command == "build-case":
             return _cmd_build_case(args)
@@ -314,6 +324,9 @@ def _cmd_ingest_surface(args: argparse.Namespace) -> int:
         if not args.data_root:
             raise TitanEyeError("--persist requiere --data-root")
         from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
+        from titan_eye.ingestion.cache import FetchCache
+        # Sella el Raw en la cache para que verify-surface tenga su ancla (I1).
+        FetchCache(Path(args.data_root) / "cache").put(artifact, cache_key=artifact.content_hash)
         repo = ConflictEventsRepository(Path(args.data_root) / "normalized" / "surface")
         summary["snapshot_written"] = repo.insert_snapshot(events)
         summary["persisted_total"] = repo.count()
@@ -340,6 +353,53 @@ def _cmd_heatmap(args: argparse.Namespace) -> int:
         "n_cells": len(hm.points),
         "semantics": hm.semantics_note,
     }, indent=2, ensure_ascii=False))
+    return 0
+
+
+def run_ingest_maritime(*, artifact) -> tuple[dict[str, Any], list]:
+    """Normaliza un dataset AIS sellado. No toca red. (resumen, buques)."""
+    from titan_eye.catalog.normalizers.ais import normalize_ais
+
+    vessels = normalize_ais(artifact)
+    by_type: dict[str, int] = {}
+    for v in vessels:
+        by_type[v.vessel_type.value] = by_type.get(v.vessel_type.value, 0) + 1
+    summary = {
+        "domain": "maritime",
+        "content_hash": artifact.content_hash,
+        "epistemic_label": artifact.epistemic_label.value,   # observed
+        "n_vessels": len(vessels),
+        "by_vessel_type": by_type,
+        "note": ("AIS AUTODECLARADO por el buque. Falsificable; buques de guerra "
+                 "apagan/falsean el AIS; submarinos sumergidos no transmiten (ADR-0015)."),
+    }
+    return summary, vessels
+
+
+def _cmd_ingest_maritime(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.sources.local_report import seal_report_file
+
+    artifact = seal_report_file(
+        args.vessels, domain=Domain.MARITIME, source_id="ais.vessels",
+        epistemic_label=EpistemicLabel.OBSERVED,
+        license_note="Dataset AIS público (p. ej. AISHub/AISStream) — respetar atribución y TOS.",
+    )
+    summary, vessels = run_ingest_maritime(artifact=artifact)
+    if args.persist:
+        if not args.data_root:
+            raise TitanEyeError("--persist requiere --data-root")
+        from titan_eye.catalog.vessel_positions_repo import VesselPositionsRepository
+        from titan_eye.ingestion.cache import FetchCache
+        # Sella el Raw en la cache para que verify-maritime tenga su ancla (I1).
+        FetchCache(Path(args.data_root) / "cache").put(artifact, cache_key=artifact.content_hash)
+        repo = VesselPositionsRepository(Path(args.data_root) / "normalized" / "maritime")
+        summary["snapshot_written"] = repo.insert_snapshot(vessels)
+        summary["persisted_total"] = repo.count()
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
     return 0
 
 
@@ -387,6 +447,9 @@ def _cmd_reconstruct_ballistic(args: argparse.Namespace) -> int:
         if not args.data_root:
             raise TitanEyeError("--persist requiere --data-root")
         from titan_eye.catalog.ballistic_repo import BallisticTrajectoryRepository
+        from titan_eye.ingestion.cache import FetchCache
+        # Sella el reporte Raw en la cache (ancla de procedencia para build-case).
+        FetchCache(Path(args.data_root) / "cache").put(artifact, cache_key=artifact.content_hash)
         repo = BallisticTrajectoryRepository(Path(args.data_root) / "derived" / "ballistic")
         summary["persisted"] = repo.insert(traj)
         summary["persisted_total"] = repo.count()
@@ -403,6 +466,7 @@ def _collect_refs_from_root(root) -> list:
     from titan_eye.catalog.ballistic_repo import BallisticTrajectoryRepository
     from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
     from titan_eye.catalog.orbital_elements_repo import OrbitalElementsRepository
+    from titan_eye.catalog.vessel_positions_repo import VesselPositionsRepository
     from titan_eye.core.domains import Domain
     from titan_eye.provenance.situation_case import DetectionRef
 
@@ -413,6 +477,7 @@ def _collect_refs_from_root(root) -> list:
         (Domain.AERIAL, "opensky.states", AircraftStatesRepository(norm / "aerial")),
         (Domain.ORBITAL, "celestrak.gp", OrbitalElementsRepository(norm / "orbital")),
         (Domain.SURFACE, "conflict.events", ConflictEventsRepository(norm / "surface")),
+        (Domain.MARITIME, "ais.vessels", VesselPositionsRepository(norm / "maritime")),
         (Domain.SUBORBITAL, "ballistic.report",
          BallisticTrajectoryRepository(root / "derived" / "ballistic")),
     ]
@@ -494,12 +559,20 @@ def _cmd_verify(args: argparse.Namespace, *, domain: str) -> int:
         report = verify_orbital_integrity(
             repo, cache, check_reproducibility=not args.no_reproducibility
         )
-    else:
+    elif domain == "surface":
         from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
         from titan_eye.provenance.integrity import verify_surface_integrity
 
         repo = ConflictEventsRepository(root / "normalized" / "surface")
         report = verify_surface_integrity(
+            repo, cache, check_reproducibility=not args.no_reproducibility
+        )
+    else:
+        from titan_eye.catalog.vessel_positions_repo import VesselPositionsRepository
+        from titan_eye.provenance.integrity import verify_maritime_integrity
+
+        repo = VesselPositionsRepository(root / "normalized" / "maritime")
+        report = verify_maritime_integrity(
             repo, cache, check_reproducibility=not args.no_reproducibility
         )
     print(json.dumps({

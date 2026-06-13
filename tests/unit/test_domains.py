@@ -5,8 +5,10 @@ from __future__ import annotations
 from titan_eye.core.domains import DOMAIN_UNCERTAINTY_NOTE, Domain
 
 
-def test_four_domains_exist() -> None:
-    assert {d.value for d in Domain} == {"orbital", "suborbital", "aerial", "surface"}
+def test_domains_exist() -> None:
+    assert {d.value for d in Domain} == {
+        "orbital", "suborbital", "aerial", "surface", "maritime"
+    }
 
 
 def test_every_domain_declares_uncertainty() -> None:

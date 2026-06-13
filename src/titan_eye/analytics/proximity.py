@@ -124,7 +124,8 @@ def find_proximities(
 
 # Incertidumbre nominal por dominio cuando el payload no la trae explícita (km).
 _GEOLOC_UNC_KM = {"exact": 1.5, "city": 12.0, "region": 55.0, "country": 150.0}
-_AERIAL_NOMINAL_KM = 0.5  # precisión nominal de posición ADS-B
+_AERIAL_NOMINAL_KM = 0.5   # precisión nominal de posición ADS-B
+_MARITIME_NOMINAL_KM = 1.0  # AIS: posición declarada, sujeta a spoofing (ADR-0015)
 
 
 def entities_from_payload(payload: dict) -> list[PositionedEntity]:
@@ -140,6 +141,10 @@ def entities_from_payload(payload: dict) -> list[PositionedEntity]:
         out.append(PositionedEntity(
             Domain.AERIAL, str(a["id"]), a["lat"], a["lon"], a.get("alt_km", 0.0),
             EpistemicLabel.OBSERVED, _AERIAL_NOMINAL_KM))
+    for v in d.get("maritime", []):
+        out.append(PositionedEntity(
+            Domain.MARITIME, str(v["id"]), v["lat"], v["lon"], 0.0,
+            EpistemicLabel.OBSERVED, _MARITIME_NOMINAL_KM))
     for o in d.get("orbital", []):
         out.append(PositionedEntity(
             Domain.ORBITAL, str(o["id"]), o["lat"], o["lon"], o.get("alt_km", 0.0),

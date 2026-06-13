@@ -3,8 +3,8 @@
 [![ci](https://github.com/JFHelvetius/titan-eye/actions/workflows/ci.yml/badge.svg)](https://github.com/JFHelvetius/titan-eye/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
-[![tests](https://img.shields.io/badge/tests-97%20passing-brightgreen.svg)](tests/)
-[![ADRs](https://img.shields.io/badge/ADRs-14-informational.svg)](docs/adr/)
+[![tests](https://img.shields.io/badge/tests-108%20passing-brightgreen.svg)](tests/)
+[![ADRs](https://img.shields.io/badge/ADRs-15-informational.svg)](docs/adr/)
 
 **Infraestructura verificable para afirmaciones sobre actividad militar observable con datos públicos.**
 
@@ -82,6 +82,11 @@ end-to-end contra fuentes públicas reales.
   (ACLED/GDELT) con `geoloc_resolution` declarada, y **mapa de calor por KDE** con
   ancho de banda declarado. El peso mide **densidad de eventos reportados**, nunca
   intensidad de conflicto ni amenaza (ADR-0003).
+- **Marítimo (buques y flotas)** — `observed`: ingesta AIS con clases de buque
+  descriptivas (portaaviones, destructor, fragata, submarino, anfibio, patrullero).
+  Honestidad reforzada (ADR-0015): el AIS es **autodeclarado y falsificable**, los
+  buques de guerra lo apagan/falsean y los submarinos sumergidos no transmiten —
+  *ausencia ≠ inexistencia*.
 
 ```bash
 pip install -e ".[dev,app]"

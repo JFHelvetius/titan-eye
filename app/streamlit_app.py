@@ -50,11 +50,26 @@ def _css() -> None:
 
 def _empty_payload() -> dict:
     return {
-        "domains": {"orbital": [], "aerial": [], "suborbital": [], "surface": []},
+        "domains": {"orbital": [], "aerial": [], "maritime": [], "suborbital": [], "surface": []},
         "heatmap": [],
-        "layers": {"orbital": True, "aerial": True, "suborbital": True,
+        "layers": {"orbital": True, "aerial": True, "maritime": True, "suborbital": True,
                    "surface": True, "heatmap": False, "range": False},
     }
+
+
+def _fetch_maritime(raw: bytes):
+    from titan_eye.catalog.normalizers.ais import normalize_ais
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+    from titan_eye.orchestration.globe_payload import vessels_to_entries
+
+    art = RawArtifact.seal(
+        source_id="ais.vessels", domain=Domain.MARITIME, request_url="upload://ais",
+        fetched_at=datetime.now(UTC), payload=raw, epistemic_label=EpistemicLabel.OBSERVED,
+    )
+    vessels = normalize_ais(art)
+    return vessels_to_entries(vessels), {"hash": art.content_hash, "n": len(vessels)}
 
 
 # ── Fetchers por dominio (cada uno aislado; el fallo de uno no tumba el panel) ──
@@ -147,6 +162,10 @@ def _sidebar_controls() -> dict:
     cfg["bandwidth"] = st.sidebar.slider("Bandwidth KDE (km)", 10, 200, 50, 5,
                                         disabled=not cfg["surface"])
 
+    cfg["maritime"] = st.sidebar.checkbox("⚓ Marítimo · buques (AIS)", value=False)
+    cfg["maritime_file"] = st.sidebar.file_uploader("Dataset AIS (JSON)", type=["json"],
+                                                   disabled=not cfg["maritime"])
+
     cfg["ballistic"] = st.sidebar.checkbox("🚀 Suborbital · reporte balístico", value=False)
     cfg["ballistic_file"] = st.sidebar.file_uploader("Reporte balístico (JSON)", type=["json"],
                                                     disabled=not cfg["ballistic"])
@@ -177,6 +196,14 @@ def _build_combined(cfg) -> tuple[dict, list[str], list[str]]:
             notes.append(f"Orbital: {meta['n']} satélites · `{meta['hash'][:10]}…` (observed)")
         except Exception as exc:
             errors.append(f"Orbital: {type(exc).__name__}: {exc}")
+
+    if cfg["maritime"] and cfg["maritime_file"] is not None:
+        try:
+            entries, meta = _fetch_maritime(cfg["maritime_file"].getvalue())
+            payload["domains"]["maritime"] = entries
+            notes.append(f"Marítimo: {meta['n']} buques · `{meta['hash'][:10]}…` (observed/AIS)")
+        except Exception as exc:
+            errors.append(f"Marítimo: {type(exc).__name__}: {exc}")
 
     if cfg["surface"] and cfg["surface_file"] is not None:
         try:
@@ -212,12 +239,13 @@ def _parse_bbox(raw: str):
 
 def _kpis(payload: dict) -> None:
     d = payload["domains"]
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Satélites", len(d["orbital"]))
     c2.metric("Aeronaves", len(d["aerial"]))
-    c3.metric("Trayectorias", len(d["suborbital"]))
-    c4.metric("Eventos", len(d["surface"]))
-    c5.metric("Celdas calor", len(payload["heatmap"]))
+    c3.metric("Buques", len(d.get("maritime", [])))
+    c4.metric("Trayectorias", len(d["suborbital"]))
+    c5.metric("Eventos", len(d["surface"]))
+    c6.metric("Celdas calor", len(payload["heatmap"]))
 
 
 def _domain_tables(payload: dict) -> None:
@@ -230,6 +258,12 @@ def _domain_tables(payload: dict) -> None:
         with st.expander(f"✈ Aeronaves ({len(d['aerial'])}) · observed", expanded=False):
             st.dataframe([{k: r[k] for k in ("id", "callsign", "lat", "lon", "alt_km", "heading", "age_s")}
                           for r in d["aerial"]], use_container_width=True, hide_index=True)
+    if d.get("maritime"):
+        with st.expander(f"⚓ Buques ({len(d['maritime'])}) · observed (AIS)", expanded=False):
+            st.dataframe([{k: r[k] for k in ("id", "name", "vessel_type", "lat", "lon", "speed_kt", "age_s")}
+                          for r in d["maritime"]], use_container_width=True, hide_index=True)
+            st.caption("AIS **autodeclarado** y falsificable; los buques de guerra apagan o falsean "
+                       "el AIS, y los submarinos sumergidos no transmiten (ADR-0015). Ausencia ≠ inexistencia.")
     if d["suborbital"]:
         with st.expander(f"🚀 Trayectorias balísticas ({len(d['suborbital'])}) · inferred", expanded=True):
             st.dataframe([{k: r[k] for k in ("id", "apogee_km", "range_km", "band_km", "impact_dispersion_km")}

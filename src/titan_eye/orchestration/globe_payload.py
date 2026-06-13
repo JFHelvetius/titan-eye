@@ -15,6 +15,7 @@ from titan_eye.analytics.propagation.sgp4_propagator import groundtrack, propaga
 from titan_eye.analytics.surface.heatmap import HeatmapResult
 from titan_eye.catalog.aircraft import AircraftState
 from titan_eye.catalog.ballistic import BallisticTrajectory
+from titan_eye.catalog.maritime import VesselPosition
 from titan_eye.catalog.orbital import SGP4_BASELINE_KM, OrbitalElement
 from titan_eye.catalog.surface import ConflictEvent
 
@@ -139,6 +140,43 @@ def suborbital_payload(
         "heatmap": [],
         "layers": layers or {"suborbital": True, "orbital": False, "aerial": False,
                              "surface": False, "heatmap": False, "range": False},
+    }
+
+
+def vessels_to_entries(vessels: list[VesselPosition]) -> list[dict[str, Any]]:
+    """list[VesselPosition] -> entradas 'maritime' del payload del globo.
+
+    AIS autodeclarado (observed con fuerte caveat de spoofing/AIS-off, ADR-0015)."""
+    out: list[dict[str, Any]] = []
+    for v in vessels:
+        out.append({
+            "id": v.mmsi,
+            "name": v.name or v.mmsi,
+            "lon": v.longitude,
+            "lat": v.latitude,
+            "vessel_type": v.vessel_type.value,
+            "flag": v.flag or "",
+            "course": round(v.course_deg, 1) if v.course_deg is not None else 0.0,
+            "speed_kt": round(v.speed_knots, 1) if v.speed_knots is not None else 0.0,
+            "nav_status": v.nav_status or "",
+            "age_s": round(v.last_contact_age_s, 0) if v.last_contact_age_s is not None else 0.0,
+        })
+    return out
+
+
+def maritime_payload(
+    vessels: list[VesselPosition], *, layers: dict[str, bool] | None = None
+) -> dict[str, Any]:
+    """Payload completo del globo con solo el dominio marítimo poblado."""
+    return {
+        "domains": {
+            "orbital": [], "aerial": [], "suborbital": [], "surface": [],
+            "maritime": vessels_to_entries(vessels),
+        },
+        "heatmap": [],
+        "layers": layers or {"maritime": True, "orbital": False, "aerial": False,
+                             "suborbital": False, "surface": False, "heatmap": False,
+                             "range": False},
     }
 
 

@@ -21,12 +21,15 @@ from dataclasses import dataclass, field
 from titan_eye.catalog.aircraft import AircraftState
 from titan_eye.catalog.aircraft_states_repo import AircraftStatesRepository
 from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
+from titan_eye.catalog.maritime import VesselPosition
+from titan_eye.catalog.normalizers.ais import normalize_ais
 from titan_eye.catalog.normalizers.conflict_events import normalize_conflict_events
 from titan_eye.catalog.normalizers.opensky_states import normalize_states
 from titan_eye.catalog.normalizers.tle import normalize_tles
 from titan_eye.catalog.orbital import OrbitalElement
 from titan_eye.catalog.orbital_elements_repo import OrbitalElementsRepository
 from titan_eye.catalog.surface import ConflictEvent
+from titan_eye.catalog.vessel_positions_repo import VesselPositionsRepository
 from titan_eye.core.identity import content_hash_obj
 from titan_eye.ingestion.cache import FetchCache
 
@@ -45,7 +48,7 @@ class IntegrityReport:
         return not self.orphan_source_hashes and not self.reproducibility_mismatches
 
 
-def _row_identity(row: AircraftState | OrbitalElement | ConflictEvent) -> str:
+def _row_identity(row: AircraftState | OrbitalElement | ConflictEvent | VesselPosition) -> str:
     """Hash canónico del contenido SEMÁNTICO de una fila Normalized (estable
     bajo reproceso). El content_hash_source y schema_version forman parte de la
     identidad: lo que define la fila es todo su contenido normalizado."""
@@ -163,6 +166,44 @@ def verify_surface_integrity(
 
     return IntegrityReport(
         n_states=len(events),
+        n_source_hashes=len(source_hashes),
+        orphan_source_hashes=orphans,
+        reproducibility_mismatches=mismatches,
+    )
+
+
+def verify_maritime_integrity(
+    repo: VesselPositionsRepository,
+    cache: FetchCache,
+    *,
+    check_reproducibility: bool = True,
+) -> IntegrityReport:
+    """Espejo marítimo: I1 referencial + I2 reproducibilidad del parseo AIS (ADR-0015)."""
+    vessels = list(repo.iter_all())
+    source_hashes = sorted({v.content_hash_source for v in vessels})
+
+    orphans: list[str] = [h for h in source_hashes if not cache.has_blob(h)]
+
+    mismatches: list[str] = []
+    if check_reproducibility:
+        by_source: dict[str, list[VesselPosition]] = {}
+        for v in vessels:
+            by_source.setdefault(v.content_hash_source, []).append(v)
+        for h in source_hashes:
+            if h in orphans:
+                continue
+            artifact = cache.get_by_content_hash(h)
+            if artifact is None:
+                orphans.append(h)
+                continue
+            reproduced = normalize_ais(artifact)
+            expected = {_row_identity(v) for v in reproduced}
+            persisted = {_row_identity(v) for v in by_source[h]}
+            if expected != persisted:
+                mismatches.append(h)
+
+    return IntegrityReport(
+        n_states=len(vessels),
         n_source_hashes=len(source_hashes),
         orphan_source_hashes=orphans,
         reproducibility_mismatches=mismatches,
