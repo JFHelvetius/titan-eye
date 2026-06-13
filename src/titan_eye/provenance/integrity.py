@@ -21,11 +21,14 @@ from dataclasses import dataclass, field
 from titan_eye.catalog.aircraft import AircraftState
 from titan_eye.catalog.aircraft_states_repo import AircraftStatesRepository
 from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
+from titan_eye.catalog.country import CountryProfile
+from titan_eye.catalog.country_repo import CountryRepository
 from titan_eye.catalog.installations import Installation
 from titan_eye.catalog.installations_repo import InstallationsRepository
 from titan_eye.catalog.maritime import VesselPosition
 from titan_eye.catalog.normalizers.ais import normalize_ais
 from titan_eye.catalog.normalizers.conflict_events import normalize_conflict_events
+from titan_eye.catalog.normalizers.country import normalize_countries
 from titan_eye.catalog.normalizers.installations import normalize_installations
 from titan_eye.catalog.normalizers.opensky_states import normalize_states
 from titan_eye.catalog.normalizers.osint import normalize_osint
@@ -55,7 +58,8 @@ class IntegrityReport:
 
 
 def _row_identity(
-    row: AircraftState | OrbitalElement | ConflictEvent | VesselPosition | Installation | OsintItem,
+    row: AircraftState | OrbitalElement | ConflictEvent | VesselPosition
+    | Installation | OsintItem | CountryProfile,
 ) -> str:
     """Hash canónico del contenido SEMÁNTICO de una fila Normalized (estable
     bajo reproceso). El content_hash_source y schema_version forman parte de la
@@ -215,6 +219,37 @@ def verify_maritime_integrity(
         n_source_hashes=len(source_hashes),
         orphan_source_hashes=orphans,
         reproducibility_mismatches=mismatches,
+    )
+
+
+def verify_country_integrity(
+    repo: CountryRepository,
+    cache: FetchCache,
+    *,
+    check_reproducibility: bool = True,
+) -> IntegrityReport:
+    """Espejo de fichas país: I1 referencial + I2 reproducibilidad (ADR-0021)."""
+    items = list(repo.iter_all())
+    source_hashes = sorted({i.content_hash_source for i in items})
+    orphans: list[str] = [h for h in source_hashes if not cache.has_blob(h)]
+    mismatches: list[str] = []
+    if check_reproducibility:
+        by_source: dict[str, list[CountryProfile]] = {}
+        for it in items:
+            by_source.setdefault(it.content_hash_source, []).append(it)
+        for h in source_hashes:
+            if h in orphans:
+                continue
+            artifact = cache.get_by_content_hash(h)
+            if artifact is None:
+                orphans.append(h)
+                continue
+            reproduced = normalize_countries(artifact)
+            if {_row_identity(i) for i in reproduced} != {_row_identity(i) for i in by_source[h]}:
+                mismatches.append(h)
+    return IntegrityReport(
+        n_states=len(items), n_source_hashes=len(source_hashes),
+        orphan_source_hashes=orphans, reproducibility_mismatches=mismatches,
     )
 
 

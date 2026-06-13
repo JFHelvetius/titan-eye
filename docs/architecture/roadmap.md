@@ -161,9 +161,13 @@ Inteligencia narrativa con procedencia (ADR-0020), no veredicto de veracidad.
 - [x] Normalizador, repo Parquet, `verify-osint`, CLI `ingest osint`. Capa "Noticias/RRSS" en el globo (marcador ✎ con enlace a la fuente) + tabla + filtro (kind=tier).
 - [x] **Honestidad dura (ADR-0020):** Titan Eye **no verifica veracidad** ni puntúa credibilidad/desinformación. Garantiza **procedencia** (qué fuente, cuándo, URL, hash); el tier describe el TIPO de fuente, no su verdad. Sin sello "verificado por Titan Eye".
 
-> **Capas alineadas pendientes (planificables cuando se quiera):** fichas
-> país/alianzas (referencia pública), clasificación por tipo de aeronave/satélite
-> (requiere reference DB / satcat).
+## Fase 12 — Fichas país y alianzas + dashboard desplegable  *(núcleo cerrado)*
+
+- [x] `CountryProfile` (`asserted`, ADR-0021): presupuesto militar, personal activo/reservas, alianzas — cifras de fuentes públicas (SIPRI/IISS) con año y fuente. Normalizador + repo + `verify-countries` + CLI `ingest countries`. Pestaña "Países & Alianzas" en el dashboard (ficha + agrupación por alianza declarada). **Sin ranking de poder ni 'amenazas activas'** (ADR-0003): solo cifras con procedencia.
+- [x] **Dashboard desplegable en una URL**: `requirements.txt` + bootstrap de `sys.path` en `app/streamlit_app.py` → arranca en Streamlit Community Cloud (boot 200 sin PYTHONPATH). Instrucciones en el README.
+
+> **Capas alineadas pendientes:** clasificación por tipo de aeronave/satélite
+> (requiere reference DB / satcat); adaptadores en vivo con clave (ADR de secretos).
 
 ---
 

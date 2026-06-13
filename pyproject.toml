@@ -83,8 +83,9 @@ ignore = [
 "tests/**" = ["B017", "RUF059"]
 # app/ es la capa de presentación: HTML/CSS/JS embebido y literales de demo,
 # donde el límite de 100 columnas es impráctico (ADR-0004). El núcleo en src/
-# sí lo respeta.
-"app/**" = ["E501"]
+# sí lo respeta. E402: el dashboard hace bootstrap de sys.path antes de importar
+# streamlit (necesario para Streamlit Cloud), así que los imports no van arriba.
+"app/**" = ["E501", "E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

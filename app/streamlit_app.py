@@ -16,7 +16,17 @@ Ejecutar:
 
 from __future__ import annotations
 
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
+
+# Bootstrap de path: hace importables `app.*` y `titan_eye` sin instalación
+# editable, para que el dashboard arranque en Streamlit Community Cloud (que
+# ejecuta app/streamlit_app.py directamente desde el repo público).
+_ROOT = Path(__file__).resolve().parent.parent
+for _p in (_ROOT, _ROOT / "src"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -551,6 +561,61 @@ def _page_timeline() -> None:
     components.html(globe_html(payload, height=700), height=720, scrolling=False)
 
 
+def _page_countries() -> None:
+    from titan_eye.catalog.normalizers.country import normalize_countries
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+
+    st.subheader("Países & Alianzas")
+    st.markdown(
+        "Cifras de fuentes **públicas** (SIPRI / IISS Military Balance / oficiales) con su "
+        "año y fuente. Son **estimaciones**, no datos de Titan Eye; **no** hay ranking de "
+        "poder ni 'amenazas activas' (ADR-0021). El lector compara con la procedencia dada."
+    )
+    up = st.file_uploader("Dataset de fichas país (JSON: lista o {countries:[...]})",
+                          type=["json"], key="countries_up")
+    if up is None:
+        st.info("Sube un dataset de fichas país para explorarlas.")
+        return
+    try:
+        art = RawArtifact.seal(
+            source_id="countries.reference", domain=Domain.REFERENCE,
+            request_url="upload://countries", fetched_at=datetime.now(UTC),
+            payload=up.getvalue(), epistemic_label=EpistemicLabel.ASSERTED)
+        profiles = normalize_countries(art)
+    except Exception as exc:
+        st.error(f"{type(exc).__name__}: {exc}")
+        return
+    if not profiles:
+        st.warning("El dataset no tiene fichas.")
+        return
+
+    by_name = {p.country: p for p in profiles}
+    sel = st.selectbox("País", sorted(by_name))
+    p = by_name[sel]
+    c1, c2, c3 = st.columns(3)
+    budget = f"${p.military_budget_usd:,.0f}" if p.military_budget_usd is not None else "—"
+    c1.metric(f"Presupuesto militar{f' ({p.budget_year})' if p.budget_year else ''}", budget)
+    c2.metric("Personal activo", f"{p.active_personnel:,}" if p.active_personnel is not None else "—")
+    c3.metric("Reservistas", f"{p.reserve_personnel:,}" if p.reserve_personnel is not None else "—")
+    st.write(f"**Región:** {p.region or '—'}  ·  **Alianzas:** "
+             + (", ".join(p.alliances) if p.alliances else "—"))
+    if p.source:
+        st.caption(f"Fuente: {p.source} {p.source_url}".strip())
+
+    # Agrupación por alianza (declarada por el dato, no inferida).
+    alliances: dict[str, list[str]] = {}
+    for prof in profiles:
+        for a in prof.alliances:
+            alliances.setdefault(a, []).append(prof.country)
+    if alliances:
+        st.markdown("**Alianzas y bloques** (pertenencia declarada por el dato)")
+        st.dataframe([{"alianza": a, "miembros": ", ".join(sorted(m)), "n": len(m)}
+                      for a, m in sorted(alliances.items())],
+                     use_container_width=True, hide_index=True)
+
+
 def _page_about() -> None:
     st.subheader("Qué es Titan Eye")
     st.markdown(
@@ -581,14 +646,17 @@ def main() -> None:
     _css()
     st.markdown("# 🛰 Titan Eye <span class='te-tag'>· panel de situación multidominio</span>",
                 unsafe_allow_html=True)
-    tab_sit, tab_intel, tab_time, tab_verify, tab_about = st.tabs(
-        ["Panel de situación", "Índice & Alertas", "Línea temporal", "Verificación", "Acerca de"])
+    tab_sit, tab_intel, tab_time, tab_country, tab_verify, tab_about = st.tabs(
+        ["Panel de situación", "Índice & Alertas", "Línea temporal",
+         "Países & Alianzas", "Verificación", "Acerca de"])
     with tab_sit:
         _page_situation()
     with tab_intel:
         _page_intel()
     with tab_time:
         _page_timeline()
+    with tab_country:
+        _page_countries()
     with tab_verify:
         _page_verify()
     with tab_about:

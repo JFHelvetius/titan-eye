@@ -1,0 +1,10 @@
+# Dependencias de runtime para desplegar el dashboard en Streamlit Community Cloud.
+# (El paquete `titan_eye` se importa desde src/ vía el bootstrap de sys.path en
+#  app/streamlit_app.py, así que no hace falta instalación editable.)
+streamlit>=1.35,<2
+pydantic>=2.7,<3
+duckdb>=1.0,<2
+pyarrow>=15,<20
+sgp4>=2.20,<3
+pandas>=2,<3
+tzdata

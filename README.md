@@ -3,8 +3,8 @@
 [![ci](https://github.com/JFHelvetius/titan-eye/actions/workflows/ci.yml/badge.svg)](https://github.com/JFHelvetius/titan-eye/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
-[![tests](https://img.shields.io/badge/tests-148%20passing-brightgreen.svg)](tests/)
-[![ADRs](https://img.shields.io/badge/ADRs-20-informational.svg)](docs/adr/)
+[![tests](https://img.shields.io/badge/tests-155%20passing-brightgreen.svg)](tests/)
+[![ADRs](https://img.shields.io/badge/ADRs-21-informational.svg)](docs/adr/)
 
 **Infraestructura verificable para afirmaciones sobre actividad militar observable con datos públicos.**
 
@@ -105,6 +105,19 @@ El proyecto culmina en un **panel de situación Streamlit** (`app/streamlit_app.
 que combina los cuatro dominios sobre un único globo táctico Cesium, con KPIs,
 tablas por dominio etiquetadas por epistemología, y una pestaña de verificación de
 procedencia (I1/I2). Cada panel declara la naturaleza del dato y su incertidumbre.
+
+## Desplegar el dashboard en una URL (Streamlit Community Cloud)
+
+El repo está **listo para desplegar** (`requirements.txt` + bootstrap de path en
+la app). En **share.streamlit.io** → *New app*:
+
+- **Repository:** `JFHelvetius/titan-eye` · **Branch:** `main`
+- **Main file path:** `app/streamlit_app.py`
+
+Tras *Deploy* (~1 min) el dashboard queda en una URL pública
+`https://<algo>.streamlit.app`. Es gratis para repos públicos. El globo Cesium se
+sirve aparte desde GitHub Pages (`https://jfhelvetius.github.io/titan-eye/cesium/`)
+y el dashboard lo embebe automáticamente.
 
 ## Caso de situación auditable por cualquiera
 

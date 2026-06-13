@@ -42,13 +42,13 @@ tomada** (ADR-0000, P6).
 | [0018](0018-country-type-filter-v01.md) | Filtro transversal por país y tipo v0.1 | Aceptado |
 | [0019](0019-historical-timeline-v01.md) | Línea temporal histórica (replay sobre store append-only) v0.1 | Aceptado |
 | [0020](0020-osint-news-layer-v01.md) | Capa OSINT — noticias y redes sociales geolocalizadas v0.1 | Aceptado |
+| [0021](0021-country-profiles-alliances-v01.md) | Fichas país y alianzas (referencia pública) v0.1 | Aceptado |
 
 ## Planificados (no escritos aún)
 
 | ADR | Título tentativo |
 |-----|------------------|
-| 0021 | Gestión de secretos (tokens OpenSky, ACLED/AIS/OSINT API en vivo) |
-| 0022 | Fichas país y alianzas (referencia pública) |
+| 0022 | Gestión de secretos (tokens OpenSky, ACLED/AIS/OSINT API en vivo) |
 | 0023 | Reproducibilidad bajo entorno declarado / cierre formal con contrato congelado |
 
 > Nota de numeración: 0009 (aéreo) se aceptó antes que 0008 (storage). Los
