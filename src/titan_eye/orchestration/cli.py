@@ -163,6 +163,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_vcase = sub.add_parser("verify-case",
                              help="Verifica la auto-consistencia de un caso de situación por hash")
     p_vcase.add_argument("--case", required=True, help="Fichero JSON del caso.")
+
+    p_tl = sub.add_parser("timeline",
+                          help="Serie temporal de actividad por día desde el store persistido")
+    p_tl.add_argument("--data-root", required=True, help="Raíz de datos persistida.")
     return parser
 
 
@@ -196,6 +200,8 @@ def cli_entry_point(argv: list[str] | None = None) -> int:
             return _cmd_build_case(args)
         if args.command == "verify-case":
             return _cmd_verify_case(args)
+        if args.command == "timeline":
+            return _cmd_timeline(args)
         parser.error("comando no reconocido")
         return 2
     except TitanEyeError as exc:
@@ -594,6 +600,58 @@ def _cmd_build_case(args: argparse.Namespace) -> int:
         "n_entries": len(case.entries),
         "domains": sorted({e.domain.value for e in case.entries}),
         "out": str(args.out),
+    }, indent=2, ensure_ascii=False))
+    return 0
+
+
+def load_timeline_items(data_root) -> list:
+    """Lee las capas Normalized del data-root y produce TimelineItem por fecha (ADR-0019).
+
+    superficie → event_date; aéreo/marítimo → día de snapshot_time. Orbital,
+    suborbital e instalaciones quedan fuera de la línea temporal v0.1."""
+    from pathlib import Path
+
+    from titan_eye.analytics.timeline import TimelineItem
+    from titan_eye.catalog.aircraft_states_repo import AircraftStatesRepository
+    from titan_eye.catalog.conflict_events_repo import ConflictEventsRepository
+    from titan_eye.catalog.vessel_positions_repo import VesselPositionsRepository
+    from titan_eye.orchestration.globe_payload import (
+        aerial_states_to_entries,
+        conflict_events_to_entries,
+        vessels_to_entries,
+    )
+
+    norm = Path(data_root) / "normalized"
+    items: list = []
+
+    events = list(ConflictEventsRepository(norm / "surface").iter_all())
+    for ev, entry in zip(events, conflict_events_to_entries(events), strict=True):
+        items.append(TimelineItem(ev.event_date.isoformat(), "surface", entry))
+
+    states = list(AircraftStatesRepository(norm / "aerial").iter_all())
+    statics = [s for s in states if s.has_position]
+    for s, entry in zip(statics, aerial_states_to_entries(statics), strict=True):
+        items.append(TimelineItem(s.snapshot_time.date().isoformat(), "aerial", entry))
+
+    vessels = list(VesselPositionsRepository(norm / "maritime").iter_all())
+    for v, entry in zip(vessels, vessels_to_entries(vessels), strict=True):
+        items.append(TimelineItem(v.snapshot_time.date().isoformat(), "maritime", entry))
+
+    return items
+
+
+def _cmd_timeline(args: argparse.Namespace) -> int:
+    from titan_eye.analytics.timeline import summarize
+
+    items = load_timeline_items(args.data_root)
+    s = summarize(items)
+    print(json.dumps({
+        "n_items": s.n_items,
+        "first_day": s.first_day,
+        "last_day": s.last_day,
+        "days": [{"date": d.date, "total": d.total, "counts": d.counts} for d in s.days],
+        "note": ("Replay del store append-only (ADR-0019): muestra lo observado/reportado "
+                 "y persistido cada día. Días sin datos = sin captura, no 'sin actividad'."),
     }, indent=2, ensure_ascii=False))
     return 0
 

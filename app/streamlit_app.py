@@ -472,6 +472,47 @@ def _page_intel() -> None:
                    "ni emiten veredictos de amenaza (ADR-0016).")
 
 
+def _page_timeline() -> None:
+    from titan_eye.analytics.timeline import (
+        available_days,
+        daily_activity,
+        payload_for_day,
+    )
+    from titan_eye.orchestration.cli import load_timeline_items
+
+    st.subheader("Línea temporal histórica")
+    st.markdown(
+        "Reproduce la situación de un día desde el store **append-only** (ADR-0019). "
+        "Muestra lo observado/reportado y persistido ese día; los días sin datos "
+        "están vacíos porque **no hubo captura**, no porque no hubiera actividad."
+    )
+    root = st.text_input("Raíz de datos local (la generada con `--persist`)",
+                         value="./data", key="tl_root")
+    try:
+        items = load_timeline_items(root)
+    except Exception as exc:
+        st.error(f"{type(exc).__name__}: {exc}")
+        return
+    days = available_days(items)
+    if not days:
+        st.info("No hay datos persistidos con fecha en este data-root "
+                "(superficie/aéreo/marítimo). Ingiere con `--persist` primero.")
+        return
+
+    activity = daily_activity(items)
+    chart = {d.date: d.counts for d in activity}
+    domains = sorted({k for c in chart.values() for k in c})
+    st.markdown("**Evolución día a día** (conteo por dominio)")
+    st.bar_chart({dom: [chart[day].get(dom, 0) for day in days] for dom in domains})
+    st.caption("Eje X: días con datos · " + " · ".join(days[:8]) + ("…" if len(days) > 8 else ""))
+
+    sel = st.select_slider("Día a reproducir", options=days, value=days[-1])
+    payload = payload_for_day(items, sel)
+    n = sum(len(v) for v in payload["domains"].values())
+    st.success(f"Replay {sel}: {n} detecciones persistidas ese día.")
+    components.html(globe_html(payload, height=700), height=720, scrolling=False)
+
+
 def _page_about() -> None:
     st.subheader("Qué es Titan Eye")
     st.markdown(
@@ -502,12 +543,14 @@ def main() -> None:
     _css()
     st.markdown("# 🛰 Titan Eye <span class='te-tag'>· panel de situación multidominio</span>",
                 unsafe_allow_html=True)
-    tab_sit, tab_intel, tab_verify, tab_about = st.tabs(
-        ["Panel de situación", "Índice & Alertas", "Verificación", "Acerca de"])
+    tab_sit, tab_intel, tab_time, tab_verify, tab_about = st.tabs(
+        ["Panel de situación", "Índice & Alertas", "Línea temporal", "Verificación", "Acerca de"])
     with tab_sit:
         _page_situation()
     with tab_intel:
         _page_intel()
+    with tab_time:
+        _page_timeline()
     with tab_verify:
         _page_verify()
     with tab_about:

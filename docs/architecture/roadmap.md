@@ -145,9 +145,17 @@ Hace el seguimiento *operable* (ADR-0018): filtro de vista, no inferencia.
 - [x] Multiselect país + tipo en el dashboard; aplica a los cinco dominios + referencia.
 - [x] **Sin atribución de bando ni amenaza (ADR-0003):** solo país declarado y clase técnica; no hay "aliado/enemigo".
 
+## Fase 10 — Línea temporal histórica  *(núcleo cerrado)*
+
+"Máquina del tiempo" sobre el store append-only (ADR-0019), sin almacenamiento nuevo.
+
+- [x] `analytics/timeline.py` puro: `daily_activity` (evolución día a día por dominio), `payload_for_day` (replay de la situación de un día), `available_days`/`date_range`/`summarize`.
+- [x] Loader desde el data-root (superficie→event_date; aéreo/marítimo→día de snapshot). CLI `timeline`. Pestaña "Línea temporal" en el dashboard (gráfica de actividad + slider de día con replay en el globo).
+- [x] **Honestidad (P2):** un día sin datos está **vacío**, no se interpola — vacío = "no se capturó", no "sin actividad". Orbital/suborbital/instalaciones fuera de v0.1 (propagación / sin fecha de evento / estático), declarado.
+
 > **Capas alineadas pendientes (planificables cuando se quiera):** noticias/RRSS
-> verificadas geolocalizadas, línea temporal histórica, fichas país/alianzas,
-> clasificación por tipo de aeronave/satélite (requiere reference DB / satcat).
+> verificadas geolocalizadas, fichas país/alianzas, clasificación por tipo de
+> aeronave/satélite (requiere reference DB / satcat).
 
 ---
 

@@ -40,14 +40,15 @@ tomada** (ADR-0000, P6).
 | [0016](0016-tension-index-alerts-v01.md) | Índice de tensión y alertas de actividad observable v0.1 | Aceptado |
 | [0017](0017-installations-reference-v01.md) | Capa de referencia de instalaciones (bases e infraestructura) v0.1 | Aceptado |
 | [0018](0018-country-type-filter-v01.md) | Filtro transversal por país y tipo v0.1 | Aceptado |
+| [0019](0019-historical-timeline-v01.md) | Línea temporal histórica (replay sobre store append-only) v0.1 | Aceptado |
 
 ## Planificados (no escritos aún)
 
 | ADR | Título tentativo |
 |-----|------------------|
-| 0019 | Gestión de secretos (tokens OpenSky, ACLED/AIS API en vivo) |
-| 0020 | Capa OSINT (noticias/RRSS verificadas), fichas país/alianzas, línea temporal |
-| 0021 | Reproducibilidad bajo entorno declarado / cierre formal con contrato congelado |
+| 0020 | Gestión de secretos (tokens OpenSky, ACLED/AIS API en vivo) |
+| 0021 | Capa OSINT (noticias/RRSS verificadas), fichas país/alianzas |
+| 0022 | Reproducibilidad bajo entorno declarado / cierre formal con contrato congelado |
 
 > Nota de numeración: 0009 (aéreo) se aceptó antes que 0008 (storage). Los
 > números reflejan orden de aceptación, no de dependencia; no se reordenan.
