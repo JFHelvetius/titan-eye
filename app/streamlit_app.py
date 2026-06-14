@@ -301,6 +301,47 @@ def _fetch_surface(raw: bytes, bandwidth_km: float):
             {"hash": art.content_hash, "n": len(events), "n_cells": len(hm.points)})
 
 
+_OSM_SNAPSHOT = _ROOT / "samples" / "osm_military_bases.json"
+
+
+def _load_bundled_bases():
+    """Carga el snapshot de bases militares de OSM bundleado en el repo (instantáneo,
+    sin red). Es dato REAL de OpenStreetMap, capturado y versionado; se sella y
+    normaliza por la misma vía de procedencia que un dataset subido."""
+    from titan_eye.catalog.normalizers.overpass import normalize_overpass_military
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+    from titan_eye.ingestion.sources.overpass import OVERPASS_LICENSE_NOTE
+    from titan_eye.orchestration.globe_payload import installations_to_entries
+
+    raw = _OSM_SNAPSHOT.read_bytes()
+    art = RawArtifact.seal(
+        source_id="osm.overpass.snapshot", domain=Domain.REFERENCE,
+        request_url="file://samples/osm_military_bases.json", fetched_at=datetime.now(UTC),
+        payload=raw, epistemic_label=EpistemicLabel.ASSERTED, license_note=OVERPASS_LICENSE_NOTE,
+    )
+    items = normalize_overpass_military(art)
+    return installations_to_entries(items), {"hash": art.content_hash, "n": len(items)}
+
+
+def _fetch_osm_bases(max_elements: int = 1500):
+    """Instalaciones militares mundiales EN VIVO desde OpenStreetMap (sin clave).
+
+    Lento (barrido global en Overpass público, ~1-2 min); pensado como REFRESCO
+    opcional. El arranque usa el snapshot bundleado (`_load_bundled_bases`)."""
+    from titan_eye.catalog.normalizers.overpass import normalize_overpass_military
+    from titan_eye.ingestion.sources.overpass import OverpassSource
+    from titan_eye.ingestion.transport import UrllibTransport
+    from titan_eye.orchestration.globe_payload import installations_to_entries
+
+    src = OverpassSource(transport=UrllibTransport(retries=2))
+    art = src.fetch_military(max_elements=max_elements)
+    items = normalize_overpass_military(art)
+    return installations_to_entries(items), {"hash": art.content_hash, "n": len(items),
+                                             "note": art.license_note}
+
+
 def _fetch_gdelt_news(query: str | None = None):
     """Noticias militares/conflicto geolocalizadas EN VIVO desde GDELT (sin clave)."""
     from titan_eye.catalog.normalizers.gdelt_doc import normalize_gdelt_doc
@@ -413,7 +454,7 @@ def _build_combined(live: dict, up: dict) -> tuple[dict, list[str], list[str]]:
     if up.get("installations_file") is not None:
         try:
             entries, meta = _fetch_installations(up["installations_file"].getvalue())
-            payload["installations"] = entries
+            payload["installations"] = (payload.get("installations") or []) + entries  # suma a OSM
             notes.append(f"🏛 Tu dataset: {meta['n']} instalaciones (asserted, estático)")
         except Exception as exc:
             errors.append(f"Instalaciones: {type(exc).__name__}: {exc}")
@@ -456,6 +497,18 @@ def _cached_aerial(bbox: tuple, military_only: bool = True):
 def _cached_gdelt_news(query: str):
     """Noticias geolocalizadas en vivo (GDELT) cacheadas 5 min."""
     return _fetch_gdelt_news(query)
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def _cached_osm_bases(max_elements: int):
+    """Instalaciones militares OSM/Overpass EN VIVO cacheadas 6h (refresco opcional)."""
+    return _fetch_osm_bases(max_elements)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _cached_bundled_bases():
+    """Snapshot bundleado de bases militares OSM (instantáneo, cacheado 24h)."""
+    return _load_bundled_bases()
 
 
 def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
@@ -531,6 +584,16 @@ def _default_payload(
                          f"conflicto/militar (24h, asserted · no verificado)")
     except Exception as exc:
         errors.append(f"Noticias GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
+
+    try:
+        entries, meta = _cached_bundled_bases()
+        if entries:
+            payload["installations"] = entries
+            payload["layers"]["installations"] = True
+            notes.append(f"🏛 Bases militares · OpenStreetMap — **{meta['n']} instalaciones** "
+                         f"(bases navales/aéreas/cuarteles · asserted · puede estar incompleto)")
+    except Exception as exc:
+        errors.append(f"Bases OSM no disponibles ahora: {type(exc).__name__}: {exc}")
 
     return payload, notes, errors
 

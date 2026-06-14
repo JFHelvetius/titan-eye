@@ -526,18 +526,15 @@
       });
 
       // INSTALLATIONS — capa de referencia ESTÁTICA pública (asserted, ADR-0017).
-      // Solo display: el sistema no computa nada operacional con ellas.
+      // Solo display: el sistema no computa nada operacional con ellas. Sin label
+      // por punto (puede haber miles): solo punto coloreado; el nombre va en el popup.
       if (show('installations')) (payload.installations || []).forEach(it => {
         const mil = it.category === 'military';
         const col = mil ? COL.installation : COL.infra;
         viewer.entities.add({
           name: it.name, position: Cesium.Cartesian3.fromDegrees(it.lon, it.lat, 0),
-          point: { pixelSize: 9, color: col.withAlpha(.9),
+          point: { pixelSize: 7, color: col.withAlpha(.9),
                    outlineColor: Cesium.Color.BLACK.withAlpha(.6), outlineWidth: 1 },
-          label: { text: mil ? '▣' : '◆', font: '13px sans-serif', fillColor: col,
-                   outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
-                   style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                   pixelOffset: new Cesium.Cartesian2(0, -12) },
           description: `<h3>${it.name}</h3>` + epBadge('asserted') + htmlInfo([
             ['Capa', 'Referencia (instalación)'], ['Tipo', it.type ?? '—'],
             ['Categoría', it.category ?? '—'], ['País', it.country || '—'],

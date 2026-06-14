@@ -102,6 +102,20 @@ El toggle *Solo militar* de la barra lateral oculta el tráfico civil.
   no por el lugar del suceso; se declara en cada ítem. Densidad = volumen de
   cobertura, no intensidad del conflicto (ADR-0003).
 
+### Bases militares · OpenStreetMap / Overpass (sin clave)
+
+- **Qué:** instalaciones militares mapeadas en OSM (bases navales, aeródromos
+  militares, cuarteles, bases del ejército) en la capa de referencia (ADR-0017).
+- **Cómo se sirve:** por defecto desde un **snapshot bundleado** en
+  `data/osm_military_bases.json` (dato real de OSM, capturado y versionado) →
+  carga **instantánea, sin red**. Un barrido global en vivo de Overpass es lento
+  (~1-2 min) y satura la instancia pública, por eso es solo un **refresco opcional**
+  (`_fetch_osm_bases`, con fallback entre mirrors).
+- **Naturaleza:** `asserted` — geografía pública mantenida por la comunidad;
+  **puede estar incompleta o desactualizada** y los emplazamientos sensibles a
+  menudo no están mapeados (P2). Ausencia ≠ inexistencia. Solo display: sin
+  proximidad-a-objetivo ni cómputo operacional (ADR-0017). © OpenStreetMap (ODbL).
+
 ### Clasificación militar de satélites
 
 Cada satélite se clasifica además por **misión** (la categoría del grupo CelesTrak
