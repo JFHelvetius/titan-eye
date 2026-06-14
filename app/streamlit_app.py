@@ -152,7 +152,6 @@ _MIL_SAT_GROUPS: tuple[str, ...] = (
     "galileo",    # Galileo — UE
     "sbas",       # aumentación (WAAS/EGNOS…)
     "radar",      # calibración radar / observación
-    "nnss",       # Navy Navigation Satellite System (US Navy)
 )
 
 # Misión declarada por el grupo de origen de CelesTrak (clasificación honesta:
@@ -418,9 +417,10 @@ def _fetch_gdelt_news(query: str | None = None):
     from titan_eye.ingestion.transport import UrllibTransport
     from titan_eye.orchestration.globe_payload import osint_to_entries
 
-    # retries=1 + timeout corto: si GDELT limita (429) se rinde rápido (capa 2ª).
+    # retries=1: si GDELT limita (429) se rinde pronto. El presupuesto de tiempo
+    # global lo impone _run_parallel (capa secundaria, no debe bloquear).
     src = GdeltSource(transport=UrllibTransport(retries=1))
-    art = src.fetch_doc(query=query or DEFAULT_QUERY, timeout=5.0)
+    art = src.fetch_doc(query=query or DEFAULT_QUERY)
     items = normalize_gdelt_doc(art)
     return osint_to_entries(items), {"hash": art.content_hash, "n": len(items),
                                      "note": art.license_note}
@@ -601,11 +601,21 @@ def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
     return tuple(g.strip() for g in spec.split(",") if g.strip())
 
 
+# Presupuesto de tiempo total para los feeds en vivo. Un feed que no responda en
+# este margen se marca como no disponible (aviso no fatal) y el panel sigue; su
+# descarga termina en segundo plano y queda cacheada para la próxima carga.
+_FEEDS_BUDGET_S = 14.0
+
+
 def _run_parallel(jobs: dict) -> dict:
-    """Ejecuta varias funciones cacheadas EN PARALELO (hilos) y devuelve
-    {nombre: (valor, excepción)}. Adjunta el contexto de Streamlit a cada hilo
-    para que `st.cache_data` funcione sin avisos."""
+    """Ejecuta varias funciones cacheadas EN PARALELO (hilos) con un PRESUPUESTO de
+    tiempo global y devuelve {nombre: (valor, excepción)}.
+
+    Esta lógica vive en el script principal (que Streamlit siempre recarga), así
+    que es inmune a versiones viejas de módulos cacheados: pase lo que pase dentro
+    de un feed, nunca bloquea el panel más que `_FEEDS_BUDGET_S`."""
     import threading
+    import time
     from concurrent.futures import ThreadPoolExecutor
 
     ctx = None
@@ -627,10 +637,18 @@ def _run_parallel(jobs: dict) -> dict:
             return (None, exc)
 
     out: dict = {}
-    with ThreadPoolExecutor(max_workers=max(2, len(jobs)), initializer=_init) as ex:
+    ex = ThreadPoolExecutor(max_workers=max(2, len(jobs)), initializer=_init)
+    try:
         futs = {name: ex.submit(_call, fn, args) for name, (fn, args) in jobs.items()}
+        deadline = time.time() + _FEEDS_BUDGET_S
         for name, fut in futs.items():
-            out[name] = fut.result()
+            try:
+                out[name] = fut.result(timeout=max(0.1, deadline - time.time()))
+            except Exception as exc:  # TimeoutError u otro -> feed no disponible
+                out[name] = (None, exc)
+    finally:
+        # No esperamos a los hilos lentos: terminan en segundo plano (y cachean).
+        ex.shutdown(wait=False, cancel_futures=True)
     return out
 
 
