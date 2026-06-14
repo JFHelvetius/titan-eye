@@ -170,30 +170,67 @@ def _fetch_orbital(group):
                                                    "note": art.license_note}
 
 
+# Tope de satélites dibujados a la vez (rendimiento del globo) y nº de los más
+# recientes a los que se les pinta groundtrack (lo caro de propagar).
+_MAX_SATS = 4000
+_TRACKS_FOR_FIRST = 120
+
+
 def _fetch_orbital_multi(groups):
     """Agrega varios grupos CelesTrak en una sola capa orbital, deduplicando por
-    NORAD. Resiliente: si un grupo falla, se salta y se sigue con el resto."""
+    NORAD. Resiliente (un grupo caído no tumba la capa) y RÁPIDO: descarga los
+    grupos EN PARALELO y solo propaga groundtracks para un puñado; el resto son
+    posiciones puntuales."""
+    from concurrent.futures import ThreadPoolExecutor
+
     from titan_eye.catalog.normalizers.tle import normalize_tles
     from titan_eye.ingestion.sources.celestrak import CelesTrakSource
     from titan_eye.ingestion.transport import UrllibTransport
     from titan_eye.orchestration.globe_payload import orbital_elements_to_entries
 
-    src = CelesTrakSource(transport=UrllibTransport())
+    # 2 reintentos por grupo; descarga concurrente (máx 4 a la vez para no
+    # disparar el rate-limit de CelesTrak) → mucho más rápido que secuencial.
+    src = CelesTrakSource(transport=UrllibTransport(retries=2))
+
+    def _fetch_one(g):
+        try:
+            return src.fetch_group(g), None
+        except Exception as exc:  # se reporta arriba; un grupo no tumba la capa
+            return None, exc
+
     seen: set[int] = set()
     elements = []
     ok_groups, failed = [], []
-    for g in groups:
+    last_err = ""
+    with ThreadPoolExecutor(max_workers=min(4, len(groups))) as pool:
+        results = list(pool.map(_fetch_one, groups))
+    for g, (art, exc) in zip(groups, results, strict=True):
+        if exc is not None:
+            failed.append(g)
+            last_err = f"{type(exc).__name__}: {exc}"
+            continue
         try:
-            art = src.fetch_group(g)
             for el in normalize_tles(art):
                 if el.norad_cat_id not in seen:
                     seen.add(el.norad_cat_id)
                     elements.append(el)
             ok_groups.append(g)
-        except Exception:  # un grupo caído no debe tumbar la capa
+        except Exception as exc:  # parseo fallido de un grupo no tumba la capa
             failed.append(g)
-    entries = orbital_elements_to_entries(elements)
-    return entries, {"n": len(entries), "groups_ok": ok_groups, "groups_failed": failed}
+            last_err = f"{type(exc).__name__}: {exc}"
+
+    elements = elements[:_MAX_SATS]
+    # Groundtrack solo para los primeros (caro); el resto, posición puntual.
+    with_t = orbital_elements_to_entries(elements[:_TRACKS_FOR_FIRST], with_tracks=True)
+    no_t = orbital_elements_to_entries(elements[_TRACKS_FOR_FIRST:], with_tracks=False)
+    entries = with_t + no_t
+    meta = {"n": len(entries), "groups_ok": ok_groups, "groups_failed": failed}
+    if not entries:
+        # No cachear un resultado vacío: que el siguiente rerun reintente.
+        raise RuntimeError(
+            "CelesTrak no devolvió satélites en ningún grupo "
+            f"({last_err or 'sin detalle'}). Pulsa «Recargar feeds en vivo» en unos segundos.")
+    return entries, meta
 
 
 def _fetch_surface(raw: bytes, bandwidth_km: float):

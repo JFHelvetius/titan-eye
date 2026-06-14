@@ -378,8 +378,8 @@
       if (show('orbital')) (d.orbital || []).forEach(o => {
         const ent = viewer.entities.add({
           name: o.name, position: Cesium.Cartesian3.fromDegrees(o.lon, o.lat, (o.alt_km || 0) * 1000),
-          billboard: { image: SPRITE.sat, scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER,
-                       disableDepthTestDistance: Number.POSITIVE_INFINITY },
+          billboard: { image: SPRITE.sat, scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER },
+          // Sin disableDepthTestDistance: el globo opaco oculta los objetos del otro lado.
           label: { text: o.name, font: '11px Inter, sans-serif', fillColor: COL.sat, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
                    style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(10, 0), showBackground: true,
                    backgroundColor: new Cesium.Color(.03, .05, .09, .75) },
@@ -409,7 +409,7 @@
                        scale: (isMil ? 0.95 : 0.5) * (stale ? 0.8 : 1),
                        color: Cesium.Color.WHITE.withAlpha(stale ? .5 : (isMil ? 1 : .85)),
                        rotation: R(-(a.heading ?? 0)),
-                       verticalOrigin: Cesium.VerticalOrigin.CENTER, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+                       verticalOrigin: Cesium.VerticalOrigin.CENTER },
           label: { text: isMil ? (a.callsign || '') : '', font: '10px JetBrains Mono, monospace',
                    fillColor: COL.hostile, outlineColor: Cesium.Color.BLACK,
                    outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(8, 0) },
@@ -432,7 +432,7 @@
           name: v.name || v.id, position: Cesium.Cartesian3.fromDegrees(v.lon, v.lat, 0),
           billboard: { image: SPRITE.ship, scale: stale ? .55 : .72, color: Cesium.Color.WHITE.withAlpha(stale ? .55 : 1),
                        rotation: R(-(v.course ?? 0)),
-                       verticalOrigin: Cesium.VerticalOrigin.CENTER, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+                       verticalOrigin: Cesium.VerticalOrigin.CENTER },
           label: { text: v.name || '', font: '10px JetBrains Mono, monospace', fillColor: COL.naval,
                    outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                    pixelOffset: new Cesium.Cartesian2(8, 0) },
@@ -484,8 +484,7 @@
         const apexAlt = s.apogee_km ? s.apogee_km * 1000 : 200000;
         const ent = viewer.entities.add({
           name: s.name, position: Cesium.Cartesian3.fromDegrees(apexLon, apexLat, apexAlt),
-          billboard: { image: SPRITE.missile, scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER,
-                       disableDepthTestDistance: Number.POSITIVE_INFINITY },
+          billboard: { image: SPRITE.missile, scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER },
           description: `<h3>${s.name}</h3>` + epBadge('inferred') + htmlInfo([
             ['Dominio', 'Suborbital (balístico)'], ['Reporte de origen', s.source ?? '—'],
             ['Apogeo', (s.apogee_km ?? 0).toFixed(0) + ' km'], ['Alcance', (s.range_km ?? 0).toFixed(0) + ' km'],

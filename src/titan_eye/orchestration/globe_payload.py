@@ -51,12 +51,16 @@ def orbital_elements_to_entries(
     *,
     at: datetime | None = None,
     track_points: int = 60,
+    with_tracks: bool = True,
 ) -> list[dict[str, Any]]:
     """list[OrbitalElement] -> entradas 'orbital' del payload del globo.
 
-    Propaga cada satélite al instante `at` (posición actual) y genera un
-    groundtrack de ~un período. Omite los que fallan al propagar (código SGP4 !=0)
-    en lugar de dibujar una posición falsa (P2)."""
+    Propaga cada satélite al instante `at` (posición actual) y, si `with_tracks`,
+    genera un groundtrack de ~un período. Omite los que fallan al propagar (código
+    SGP4 !=0) en lugar de dibujar una posición falsa (P2).
+
+    `with_tracks=False` es MUCHO más rápido (1 propagación/satélite en vez de
+    ~60), pensado para capas con cientos/miles de satélites a la vez."""
     at = at or datetime.now(UTC)
     out: list[dict[str, Any]] = []
     for el in elements:
@@ -64,13 +68,15 @@ def orbital_elements_to_entries(
             now_pt = propagate_geodetic(el, [at])[0]
             if now_pt.sgp4_error_code != 0:
                 continue
-            period = el.period_min or 95.0
-            step = max(period / track_points, 0.5)
-            track = [
-                [round(p.longitude, 3), round(p.latitude, 3), round(p.altitude_km, 1)]
-                for p in groundtrack(el, start=at, span_min=period, step_min=step)
-                if p.sgp4_error_code == 0
-            ]
+            track: list[list[float]] = []
+            if with_tracks:
+                period = el.period_min or 95.0
+                step = max(period / track_points, 0.5)
+                track = [
+                    [round(p.longitude, 3), round(p.latitude, 3), round(p.altitude_km, 1)]
+                    for p in groundtrack(el, start=at, span_min=period, step_min=step)
+                    if p.sgp4_error_code == 0
+                ]
         except Exception:
             continue
         # antigüedad del TLE en días -> error declarado creciente (P2)
