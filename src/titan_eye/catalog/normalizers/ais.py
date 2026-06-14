@@ -11,7 +11,11 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from titan_eye.catalog.maritime import VesselPosition, VesselType
+from titan_eye.catalog.maritime import (
+    VesselPosition,
+    VesselType,
+    ais_type_to_vessel_type,
+)
 from titan_eye.core.epistemics import EpistemicLabel
 from titan_eye.core.errors import NormalizationError
 from titan_eye.core.timebase import from_unix
@@ -92,6 +96,10 @@ def _vessel_type(row: dict) -> VesselType:
             return VesselType(str(row["vessel_type"]).lower())
         except ValueError:
             return VesselType.OTHER
+    # Código numérico AIS (Type of ship) -> categoría, si el dato lo trae.
+    code = row.get("ais_type")
+    if isinstance(code, (int, float)) or (isinstance(code, str) and str(code).isdigit()):
+        return ais_type_to_vessel_type(int(code))
     return VesselType.OTHER
 
 

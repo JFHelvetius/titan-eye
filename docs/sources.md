@@ -117,6 +117,11 @@ El toggle *Solo militar* de la barra lateral oculta el tráfico civil.
   4. *Reboot* la app. Si el token está, los buques aparecen solos; si no, el panel
      muestra un aviso y el resto sigue funcionando.
 - **Nunca** se mete el token en el código ni en el repo (ADR de secretos).
+- **Tipo de buque:** se capta del mensaje `ShipStaticData` (el `PositionReport` no
+  lo trae) y se mapea del código AIS a la categoría (carga/petrolero/pasaje/pesca/
+  remolcador/militar…). En el globo cada categoría tiene **forma propia** (verde =
+  naval, azul = mercante, ámbar = servicio). Nota: los buques de guerra rara vez
+  emiten tipo o AIS, así que en vivo verás sobre todo mercantes.
 - **Naturaleza:** `observed` pero **autodeclarado y falsificable** (ADR-0015): los
   buques de guerra apagan o falsean el AIS y los submarinos sumergidos no
   transmiten. Ausencia ≠ inexistencia.

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from titan_eye.ingestion.sources.aisstream import aisstream_message_to_vessel
+from titan_eye.ingestion.sources.aisstream import (
+    aisstream_message_to_vessel,
+    aisstream_static_type,
+)
 
 _MSG = {
     "MessageType": "PositionReport",
@@ -42,6 +45,49 @@ def test_non_position_message_ignored() -> None:
 def test_missing_coords_ignored() -> None:
     msg = {"MessageType": "PositionReport", "MetaData": {"MMSI": 1}, "Message": {}}
     assert aisstream_message_to_vessel(msg) is None
+
+
+def test_static_type_extracted() -> None:
+    msg = {"MessageType": "ShipStaticData", "MetaData": {"MMSI": 211234560},
+           "Message": {"ShipStaticData": {"Type": 70, "Name": "X"}}}
+    assert aisstream_static_type(msg) == ("211234560", 70)
+
+
+def test_static_type_ignores_other_messages() -> None:
+    assert aisstream_static_type({"MessageType": "PositionReport"}) is None
+    assert aisstream_static_type({"MessageType": "ShipStaticData",
+                                  "MetaData": {"MMSI": 1}, "Message": {}}) is None
+
+
+def test_ais_code_maps_to_vessel_type() -> None:
+    from titan_eye.catalog.maritime import VesselType, ais_type_to_vessel_type
+    assert ais_type_to_vessel_type(70) is VesselType.CARGO     # carga
+    assert ais_type_to_vessel_type(80) is VesselType.TANKER    # petrolero
+    assert ais_type_to_vessel_type(60) is VesselType.PASSENGER
+    assert ais_type_to_vessel_type(35) is VesselType.MILITARY
+    assert ais_type_to_vessel_type(30) is VesselType.FISHING
+    assert ais_type_to_vessel_type(99) is VesselType.OTHER
+
+
+def test_ais_code_normalized_via_ais_type_field() -> None:
+    import json
+    from datetime import UTC, datetime
+
+    from titan_eye.catalog.maritime import VesselType
+    from titan_eye.catalog.normalizers.ais import normalize_ais
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+
+    payload = json.dumps({"vessels": [
+        {"mmsi": "1", "latitude": 0.0, "longitude": 0.0, "ais_type": 80},
+    ]}).encode()
+    art = RawArtifact.seal(
+        source_id="aisstream.v0", domain=Domain.MARITIME, request_url="wss://x",
+        fetched_at=datetime(2026, 6, 14, tzinfo=UTC), payload=payload,
+        epistemic_label=EpistemicLabel.OBSERVED,
+    )
+    assert normalize_ais(art)[0].vessel_type is VesselType.TANKER
 
 
 def test_output_is_consumable_by_ais_normalizer() -> None:

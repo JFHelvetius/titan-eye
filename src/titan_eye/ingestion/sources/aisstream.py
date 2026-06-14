@@ -67,6 +67,22 @@ def aisstream_message_to_vessel(msg: Any) -> dict | None:
     }
 
 
+def aisstream_static_type(msg: Any) -> tuple[str, int] | None:
+    """Extrae (MMSI, código AIS de tipo de buque) de un ShipStaticData, o None.
+
+    El tipo de buque NO viaja en PositionReport; llega en estos mensajes estáticos
+    (menos frecuentes). Pura y testeable."""
+    if not isinstance(msg, dict) or msg.get("MessageType") != "ShipStaticData":
+        return None
+    meta = msg.get("MetaData") or {}
+    static = (msg.get("Message") or {}).get("ShipStaticData") or {}
+    mmsi = meta.get("MMSI") or static.get("UserID")
+    code = static.get("Type")
+    if mmsi is None or not isinstance(code, (int, float)):
+        return None
+    return str(mmsi), int(code)
+
+
 def _num(v: Any) -> float | None:
     try:
         return None if v is None else float(v)
@@ -106,10 +122,12 @@ class AisStreamSource:
         subscribe = {
             "APIKey": self.api_key,
             "BoundingBoxes": boxes,
-            "FilterMessageTypes": ["PositionReport"],
+            # Posición + datos estáticos (estos traen el TIPO de buque).
+            "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
         }
         now = self.clock.now()
         vessels: dict[str, dict] = {}
+        types: dict[str, int] = {}
         ws = websocket.create_connection(AISSTREAM_URL, timeout=max(5.0, seconds))
         try:
             ws.send(json.dumps(subscribe))
@@ -121,14 +139,24 @@ class AisStreamSource:
                 except Exception:  # timeout/cierre -> terminamos el snapshot
                     break
                 try:
-                    v = aisstream_message_to_vessel(json.loads(raw))
+                    msg = json.loads(raw)
                 except (ValueError, TypeError):
                     continue
+                v = aisstream_message_to_vessel(msg)
                 if v is not None:
                     vessels[v["mmsi"]] = v
+                    continue
+                st = aisstream_static_type(msg)
+                if st is not None:
+                    types[st[0]] = st[1]
         finally:
             with contextlib.suppress(Exception):
                 ws.close()
+
+        # Fusiona el tipo (de ShipStaticData) en cada buque por MMSI.
+        for mmsi, code in types.items():
+            if mmsi in vessels:
+                vessels[mmsi]["ais_type"] = code
 
         payload = json.dumps(
             {"time": now.timestamp(), "vessels": list(vessels.values())},

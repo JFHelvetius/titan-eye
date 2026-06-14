@@ -158,9 +158,11 @@
     <div class="row"><img class="gl ic" id="legSat"> Satélite — color por misión (nav/militar/radar)</div>
     <div class="row"><img class="gl ic" id="legPlane"> Aeronave civil — apunta al rumbo</div>
     <div class="row"><img class="gl ic" id="legPlaneMil"> Aeronave militar (heurística) — resaltada</div>
-    <div class="row"><img class="gl ic" id="legShip"> Buque escolta (destructor/fragata)</div>
+    <div class="row"><img class="gl ic" id="legShip"> Buque naval (escolta/portaaviones/submarino, verde)</div>
     <div class="row"><img class="gl ic" id="legCarrier"> Portaaviones</div>
     <div class="row"><img class="gl ic" id="legSub"> Submarino</div>
+    <div class="row"><img class="gl ic" id="legCargo"> Mercante: carguero (azul)</div>
+    <div class="row"><img class="gl ic" id="legTanker"> Mercante: petrolero</div>
     <div class="row"><img class="gl ic" id="legMissile"> Misil balístico (apogeo)</div>
     <div class="row"><span class="gl" style="color:var(--hostile)">▲✕</span> Lanzamiento / impacto balístico</div>
     <div class="row"><span class="gl dot" style="background:var(--surface)"></span> Evento de conflicto</div>
@@ -404,13 +406,48 @@
     };
     function satImage(o) { return SAT_SPRITE[satClass(o.mission)]; }
 
-    // ── Buques: FORMA según tipo (portaaviones, submarino, anfibio, auxiliar, escolta)
-    function shipSprite(kind) {
-      const css = '#34d399';
+    // ── Buques: FORMA según tipo. Verde = naval/militar; azul = mercante/servicio.
+    function shipSprite(kind, css) {
       const c = document.createElement('canvas'); c.width = c.height = 40;
       const x = c.getContext('2d'); x.translate(20, 20);
       x.strokeStyle = 'rgba(0,0,0,.85)'; x.lineWidth = 1.5; x.fillStyle = css;
-      if (kind === 'submarine') {
+      const hull = (w, top, bot) => {  // casco genérico, proa arriba
+        x.beginPath();
+        x.moveTo(0, top); x.lineTo(w, top + 4); x.lineTo(w, bot); x.lineTo(-w, bot);
+        x.lineTo(-w, top + 4); x.closePath(); x.fill(); x.stroke();
+      };
+      if (kind === 'cargo') {
+        hull(6, -15, 13);
+        x.fillStyle = 'rgba(0,0,0,.4)';            // contenedores en cubierta
+        for (let r = -10; r <= 8; r += 5) x.fillRect(-4, r, 8, 3);
+      } else if (kind === 'tanker') {
+        hull(6, -15, 13);
+        x.fillStyle = 'rgba(255,255,255,.85)';     // domos de tanques
+        for (let r = -8; r <= 8; r += 6) { x.beginPath(); x.arc(0, r, 2, 0, 7); x.fill(); }
+      } else if (kind === 'passenger') {
+        hull(6, -15, 13);
+        x.fillStyle = 'rgba(255,255,255,.9)';      // superestructura alta (cubiertas)
+        x.fillRect(-4, -8, 8, 16);
+      } else if (kind === 'fishing') {
+        hull(4, -11, 10);
+        x.strokeStyle = css; x.beginPath(); x.moveTo(0, 2); x.lineTo(0, -9); x.stroke();  // palo
+      } else if (kind === 'tug') {
+        hull(5, -8, 11);                            // corto y rechoncho
+      } else if (kind === 'high_speed') {
+        x.beginPath();                              // casco afilado (flecha)
+        x.moveTo(0, -17); x.lineTo(4, 6); x.lineTo(0, 12); x.lineTo(-4, 6);
+        x.closePath(); x.fill(); x.stroke();
+      } else if (kind === 'pleasure') {
+        x.beginPath();                              // vela (triángulo)
+        x.moveTo(0, -14); x.lineTo(5, 10); x.lineTo(-5, 10); x.closePath(); x.fill(); x.stroke();
+      } else if (kind === 'sar') {
+        hull(6, -14, 13);
+        x.fillStyle = '#fff'; x.fillRect(-1.5, -6, 3, 10); x.fillRect(-5, -1.5, 10, 3);  // cruz
+      } else if (kind === 'law') {
+        hull(5, -15, 12);
+        x.fillStyle = 'rgba(255,255,255,.9)'; x.beginPath();
+        x.moveTo(0, -2); x.lineTo(3, 4); x.lineTo(-3, 4); x.closePath(); x.fill();        // galón
+      } else if (kind === 'submarine') {
         x.beginPath();
         x.moveTo(0, -16); x.quadraticCurveTo(6, -14, 6, 0); x.quadraticCurveTo(6, 14, 0, 16);
         x.quadraticCurveTo(-6, 14, -6, 0); x.quadraticCurveTo(-6, -14, 0, -16);
@@ -441,11 +478,21 @@
       }
       return c.toDataURL('image/png');
     }
+    const NAVY = '#34d399', CIV = '#6fa8c7', SVC = '#e3c66a';
     const SHIP_SPRITE = {
-      carrier: shipSprite('carrier'), submarine: shipSprite('submarine'),
-      amphibious: shipSprite('amphibious'), auxiliary: shipSprite('auxiliary'),
-      destroyer: shipSprite('destroyer'), frigate: shipSprite('destroyer'),
-      patrol: shipSprite('patrol'), other: shipSprite('other'),
+      // Navales / militares (verde)
+      carrier: shipSprite('carrier', NAVY), submarine: shipSprite('submarine', NAVY),
+      amphibious: shipSprite('amphibious', NAVY), auxiliary: shipSprite('auxiliary', NAVY),
+      destroyer: shipSprite('destroyer', NAVY), frigate: shipSprite('destroyer', NAVY),
+      patrol: shipSprite('patrol', NAVY), military: shipSprite('destroyer', NAVY),
+      // Mercantes (azul)
+      cargo: shipSprite('cargo', CIV), tanker: shipSprite('tanker', CIV),
+      passenger: shipSprite('passenger', CIV), fishing: shipSprite('fishing', CIV),
+      tug: shipSprite('tug', CIV), high_speed: shipSprite('high_speed', CIV),
+      pleasure: shipSprite('pleasure', CIV),
+      // Servicio (ámbar)
+      sar: shipSprite('sar', SVC), law_enforcement: shipSprite('law', SVC),
+      other: shipSprite('other', CIV),
     };
     function shipImage(v) { return SHIP_SPRITE[v.vessel_type] || SHIP_SPRITE.other; }
     const R = Cesium.Math.toRadians;
@@ -453,7 +500,8 @@
     // La leyenda usa los MISMOS sprites que el globo (identificación 1:1)
     const _legMap = { legSat: SAT_SPRITE.nav, legPlane: SPRITE.plane, legPlaneMil: SPRITE.planeMil,
                       legShip: SHIP_SPRITE.destroyer, legCarrier: SHIP_SPRITE.carrier,
-                      legSub: SHIP_SPRITE.submarine, legMissile: SPRITE.missile,
+                      legSub: SHIP_SPRITE.submarine, legCargo: SHIP_SPRITE.cargo,
+                      legTanker: SHIP_SPRITE.tanker, legMissile: SPRITE.missile,
                       legNaval: INST_SPRITE.naval_base, legAir: INST_SPRITE.air_base,
                       legArmy: INST_SPRITE.army_base, legInfra: INST_SPRITE.infra };
     for (const id in _legMap) { const el = document.getElementById(id); if (el) el.src = _legMap[id]; }
