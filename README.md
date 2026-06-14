@@ -44,6 +44,14 @@ Si buscas un dashboard de amenazas con luces rojas y veredictos automáticos, es
 | **Superficie** | Eventos de conflicto, movimientos | ACLED, GDELT | `asserted` |
 
 Detalle y términos de uso por fuente en [ADR-0002](docs/adr/0002-public-data-sources.md).
+**Guía práctica de feeds en tiempo real** (qué es gratis, qué necesita clave,
+cada cuánto se actualiza): [`docs/sources.md`](docs/sources.md).
+
+El dashboard arranca con **datos reales EN VIVO sin clave**: satélites (CelesTrak)
+y aeronaves (OpenSky/ADS-B, como FlightRadar). Nada es inventado; los dominios que
+necesitan tu clave o tu dataset (marítimo, superficie, suborbital, instalaciones,
+OSINT) se activan en la barra lateral. En el globo cada objeto se distingue por su
+**icono con forma**: ✈ avión y ⚓ buque orientados a su rumbo, 🛰 satélite, 🚀 misil.
 
 ## Arquitectura
 

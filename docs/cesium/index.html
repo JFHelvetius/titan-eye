@@ -121,6 +121,7 @@
       color: rgba(190,200,220,.7); margin-bottom: 3px; }
     .leg .row { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
     .leg .gl { width: 16px; text-align: center; font-size: 12px; }
+    .leg .ic { width: 18px; height: 18px; object-fit: contain; vertical-align: middle; }
     .leg .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
     .leg .tog { cursor: pointer; color: var(--amber-soft); font-size: 10px;
       float: right; user-select: none; }
@@ -154,15 +155,16 @@
 
   <div class="leg" id="legend">
     <div class="lt">Identificación <span class="tog" id="legToggle">ocultar</span></div>
-    <div class="row"><span class="gl dot" style="background:var(--sat)"></span> Satélite (orbital)</div>
-    <div class="row"><span class="gl dot" style="background:var(--aircraft)"></span> Aeronave (aéreo)</div>
-    <div class="row"><span class="gl dot" style="background:var(--naval)"></span> Buque (naval)</div>
+    <div class="row"><img class="gl ic" id="legSat"> Satélite (orbital)</div>
+    <div class="row"><img class="gl ic" id="legPlane"> Aeronave — apunta al rumbo</div>
+    <div class="row"><img class="gl ic" id="legShip"> Buque — apunta al rumbo</div>
+    <div class="row"><img class="gl ic" id="legMissile"> Misil balístico (apogeo)</div>
     <div class="row"><span class="gl" style="color:var(--hostile)">▲✕</span> Lanzamiento / impacto balístico</div>
     <div class="row"><span class="gl dot" style="background:var(--surface)"></span> Evento de conflicto</div>
     <div class="row"><span class="gl" style="color:var(--installation)">▣</span> Base militar</div>
     <div class="row"><span class="gl" style="color:var(--infra)">◆</span> Infraestructura crítica</div>
     <div class="row"><span class="gl" style="color:var(--osint)">✎</span> Noticia / RRSS (OSINT)</div>
-    <div class="lt" style="margin-top:6px">Epistemología: punto nítido=observado · halo=afirmado · tubo=inferido</div>
+    <div class="lt" style="margin-top:6px">Epistemología: icono nítido=observado · halo=afirmado · tubo=inferido</div>
   </div>
 
   <script>
@@ -267,6 +269,59 @@
       osint: Cesium.Color.fromCssColorString('#a78bfa'),
       amber: Cesium.Color.fromCssColorString('#d98a2b'),
     };
+
+    // ── Iconos con FORMA (canvas → dataURL) para distinguir cada objeto ──────
+    // Dibujados apuntando hacia ARRIBA (norte); el billboard se rota por rumbo.
+    function sprite(kind, css) {
+      const c = document.createElement('canvas'); c.width = c.height = 40;
+      const x = c.getContext('2d');
+      x.translate(20, 20); x.strokeStyle = 'rgba(0,0,0,.85)'; x.lineWidth = 1.5;
+      x.fillStyle = css;
+      if (kind === 'plane') {
+        x.beginPath();
+        x.moveTo(0, -15);                 // morro
+        x.lineTo(3, -4); x.lineTo(16, 4); x.lineTo(16, 7); x.lineTo(3, 3);
+        x.lineTo(3, 11); x.lineTo(7, 15); x.lineTo(7, 17); x.lineTo(0, 15);
+        x.lineTo(-7, 17); x.lineTo(-7, 15); x.lineTo(-3, 11); x.lineTo(-3, 3);
+        x.lineTo(-16, 7); x.lineTo(-16, 4); x.lineTo(-3, -4);
+        x.closePath(); x.fill(); x.stroke();
+      } else if (kind === 'ship') {
+        x.beginPath();                    // casco (proa arriba) + superestructura
+        x.moveTo(0, -16); x.lineTo(6, -2); x.lineTo(6, 12); x.lineTo(-6, 12);
+        x.lineTo(-6, -2); x.closePath(); x.fill(); x.stroke();
+        x.fillStyle = 'rgba(255,255,255,.85)';
+        x.fillRect(-3, -2, 6, 6);
+      } else if (kind === 'missile') {
+        x.beginPath();                    // cohete puntiagudo + aletas
+        x.moveTo(0, -17); x.lineTo(4, -6); x.lineTo(4, 9); x.lineTo(7, 16);
+        x.lineTo(2, 12); x.lineTo(2, 16); x.lineTo(-2, 16); x.lineTo(-2, 12);
+        x.lineTo(-7, 16); x.lineTo(-4, 9); x.lineTo(-4, -6);
+        x.closePath(); x.fill(); x.stroke();
+      } else if (kind === 'sat') {
+        x.fillStyle = css;                // cuerpo + dos paneles solares
+        x.fillRect(-4, -5, 8, 10); x.strokeRect(-4, -5, 8, 10);
+        x.fillStyle = 'rgba(120,160,220,.9)';
+        x.fillRect(-15, -4, 9, 8); x.strokeRect(-15, -4, 9, 8);
+        x.fillRect(6, -4, 9, 8); x.strokeRect(6, -4, 9, 8);
+      } else { // evento / genérico: rombo
+        x.beginPath(); x.moveTo(0, -9); x.lineTo(9, 0); x.lineTo(0, 9);
+        x.lineTo(-9, 0); x.closePath(); x.fill(); x.stroke();
+      }
+      return c.toDataURL('image/png');
+    }
+    const SPRITE = {
+      plane: sprite('plane', '#f0b429'),
+      ship: sprite('ship', '#34d399'),
+      missile: sprite('missile', '#e63946'),
+      sat: sprite('sat', '#38bdf8'),
+      event: sprite('event', '#ef5d4c'),
+    };
+    const R = Cesium.Math.toRadians;
+
+    // La leyenda usa los MISMOS sprites que el globo (identificación 1:1)
+    const _legMap = { legSat: SPRITE.sat, legPlane: SPRITE.plane, legShip: SPRITE.ship, legMissile: SPRITE.missile };
+    for (const id in _legMap) { const el = document.getElementById(id); if (el) el.src = _legMap[id]; }
+
     document.getElementById('hudSub').textContent = 'Esri Dark (táctico)';
     try {
       Cesium.knockout.getObservable(viewer.baseLayerPicker.viewModel, 'selectedImagery')
@@ -316,11 +371,12 @@
       const L = payload.layers || {};
       const show = id => (L[id] !== undefined ? L[id] : document.getElementById('lyr-' + id)?.checked);
 
-      // ORBITAL (observed) — punto + groundtrack
+      // ORBITAL (observed) — icono de satélite + groundtrack
       if (show('orbital')) (d.orbital || []).forEach(o => {
         const ent = viewer.entities.add({
           name: o.name, position: Cesium.Cartesian3.fromDegrees(o.lon, o.lat, (o.alt_km || 0) * 1000),
-          point: { pixelSize: 9, color: COL.sat, outlineColor: Cesium.Color.WHITE.withAlpha(.8), outlineWidth: 1.5 },
+          billboard: { image: SPRITE.sat, scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER,
+                       disableDepthTestDistance: Number.POSITIVE_INFINITY },
           label: { text: o.name, font: '11px Inter, sans-serif', fillColor: COL.sat, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
                    style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(10, 0), showBackground: true,
                    backgroundColor: new Cesium.Color(.03, .05, .09, .75) },
@@ -339,12 +395,14 @@
         if (show('range')) addRing(o.lon, o.lat, horizonRadiusMeters(o.alt_km || 0), COL.sat);
       });
 
-      // AERIAL (observed) — punto ámbar + antigüedad
+      // AERIAL (observed) — icono de avión orientado por rumbo + antigüedad
       if (show('aerial')) (d.aerial || []).forEach(a => {
         const stale = (a.age_s ?? 0) > 30;
         const ent = viewer.entities.add({
           name: a.callsign || a.id, position: Cesium.Cartesian3.fromDegrees(a.lon, a.lat, (a.alt_km || 0) * 1000),
-          point: { pixelSize: 7, color: COL.aircraft.withAlpha(stale ? .5 : 1), outlineColor: Cesium.Color.BLACK.withAlpha(.6), outlineWidth: 1 },
+          billboard: { image: SPRITE.plane, scale: stale ? .55 : .7, color: Cesium.Color.WHITE.withAlpha(stale ? .55 : 1),
+                       rotation: R(-(a.heading ?? 0)),
+                       verticalOrigin: Cesium.VerticalOrigin.CENTER, disableDepthTestDistance: Number.POSITIVE_INFINITY },
           label: { text: a.callsign || '', font: '10px JetBrains Mono, monospace', fillColor: COL.aircraft, outlineColor: Cesium.Color.BLACK,
                    outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(8, 0) },
           description: `<h3>${a.callsign || a.id}</h3>` + epBadge('observed') + htmlInfo([
@@ -363,8 +421,9 @@
         const stale = (v.age_s ?? 0) > 600;
         const ent = viewer.entities.add({
           name: v.name || v.id, position: Cesium.Cartesian3.fromDegrees(v.lon, v.lat, 0),
-          point: { pixelSize: 8, color: COL.naval.withAlpha(stale ? .5 : 1),
-                   outlineColor: Cesium.Color.BLACK.withAlpha(.6), outlineWidth: 1 },
+          billboard: { image: SPRITE.ship, scale: stale ? .55 : .72, color: Cesium.Color.WHITE.withAlpha(stale ? .55 : 1),
+                       rotation: R(-(v.course ?? 0)),
+                       verticalOrigin: Cesium.VerticalOrigin.CENTER, disableDepthTestDistance: Number.POSITIVE_INFINITY },
           label: { text: v.name || '', font: '10px JetBrains Mono, monospace', fillColor: COL.naval,
                    outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE,
                    pixelOffset: new Cesium.Cartesian2(8, 0) },
@@ -416,7 +475,8 @@
         const apexAlt = s.apogee_km ? s.apogee_km * 1000 : 200000;
         const ent = viewer.entities.add({
           name: s.name, position: Cesium.Cartesian3.fromDegrees(apexLon, apexLat, apexAlt),
-          point: { pixelSize: 6, color: COL.hostile, outlineColor: Cesium.Color.WHITE.withAlpha(.7), outlineWidth: 1 },
+          billboard: { image: SPRITE.missile, scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER,
+                       disableDepthTestDistance: Number.POSITIVE_INFINITY },
           description: `<h3>${s.name}</h3>` + epBadge('inferred') + htmlInfo([
             ['Dominio', 'Suborbital (balístico)'], ['Reporte de origen', s.source ?? '—'],
             ['Apogeo', (s.apogee_km ?? 0).toFixed(0) + ' km'], ['Alcance', (s.range_km ?? 0).toFixed(0) + ' km'],

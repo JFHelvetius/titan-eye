@@ -33,10 +33,8 @@ import streamlit.components.v1 as components
 
 try:
     from app.cesium_globe import html as globe_html
-    from app.demo_data import demo_payload
 except ImportError:  # ejecutado desde dentro de app/
     from cesium_globe import html as globe_html
-    from demo_data import demo_payload
 
 AMBER = "#d98a2b"
 
@@ -223,7 +221,8 @@ def _sidebar_controls() -> dict:
                                                 disabled=not cfg["osint"])
 
     cfg["go"] = st.sidebar.button("⟳ Actualizar panel", use_container_width=True, type="primary")
-    st.sidebar.caption("Sin selección, el panel muestra datos de **demostración**.")
+    st.sidebar.caption("Sin selección, el panel carga **datos reales EN VIVO**: satélites "
+                       "(CelesTrak) y aeronaves (OpenSky/ADS-B). Nada inventado.")
     return cfg
 
 
@@ -298,27 +297,56 @@ def _build_combined(cfg) -> tuple[dict, list[str], list[str]]:
     return payload, notes, errors
 
 
+# bbox aéreo por defecto: Europa + Mediterráneo + Próximo Oriente (zona densa y
+# de relevancia). (lat_min, lat_max, lon_min, lon_max).
+_DEFAULT_AERIAL_BBOX = (25.0, 70.0, -12.0, 60.0)
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def _cached_orbital(group: str):
     """Satélites en vivo (CelesTrak) cacheados 10 min (no re-llama en cada rerun)."""
     return _fetch_orbital(group)
 
 
+@st.cache_data(ttl=120, show_spinner=False)
+def _cached_aerial(bbox: tuple):
+    """Aeronaves en vivo (OpenSky/ADS-B) cacheadas 2 min (límite de la API pública)."""
+    return _fetch_aerial(bbox)
+
+
 def _default_payload() -> tuple[dict, list[str], list[str]]:
-    """Vista por defecto SIN que el usuario suba nada: satélites EN VIVO reales
-    (CelesTrak) + el resto de capas precargadas como muestra ilustrativa."""
-    payload = demo_payload()
+    """Vista por defecto SIN que el usuario suba nada: SOLO datos reales EN VIVO
+    de fuentes públicas sin clave (no hay datos inventados, P2/honestidad).
+
+    - Orbital: satélites reales vía CelesTrak (TLE) → SGP4.
+    - Aéreo: aeronaves reales vía OpenSky (ADS-B), bbox por defecto.
+    Los dominios que requieren clave de API (AIS marítimo) o un dataset público
+    (eventos de conflicto, reportes balísticos, instalaciones, OSINT) quedan
+    vacíos hasta que el usuario los active en la barra lateral."""
+    payload = _empty_payload()
     notes: list[str] = []
+    errors: list[str] = []
+
     try:
         entries, meta = _cached_orbital("stations")
         if entries:
             payload["domains"]["orbital"] = entries
-            notes.append(f"🛰 Satélites EN VIVO · CelesTrak ({meta['n']}, tiempo real)")
-    except Exception:
-        notes.append("Satélites: muestra (CelesTrak no disponible ahora)")
-    notes.append("Resto de capas: **muestra ilustrativa** — sube tus datasets en la "
-                 "barra lateral o activa OpenSky para aéreo en vivo.")
-    return payload, notes, []
+            notes.append(f"🛰 Orbital EN VIVO · CelesTrak — {meta['n']} satélites (observed)")
+    except Exception as exc:
+        errors.append(f"Orbital en vivo no disponible ahora: {type(exc).__name__}: {exc}")
+
+    try:
+        entries, meta = _cached_aerial(_DEFAULT_AERIAL_BBOX)
+        if entries:
+            payload["domains"]["aerial"] = entries
+            notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — {meta['n']} aeronaves (observed)")
+    except Exception as exc:
+        errors.append(f"Aéreo en vivo no disponible ahora: {type(exc).__name__}: {exc}")
+
+    notes.append("Marítimo (AIS), superficie, suborbital, instalaciones y OSINT: "
+                 "actívalos en la barra lateral (requieren tu dataset o clave de API). "
+                 "Nada en este panel es inventado.")
+    return payload, notes, errors
 
 
 def _parse_bbox(raw: str):
@@ -403,8 +431,9 @@ def _page_situation() -> None:
 
     _kpis(payload)
     components.html(globe_html(payload, height=820), height=840, scrolling=False)
-    st.caption("Epistemología (P9): observed = punto nítido + error nominal · asserted = halo según "
-               "resolución de geoloc · inferred = banda de incertidumbre (línea fina prohibida).")
+    st.caption("Iconos: ✈ avión (orientado al rumbo) · ⚓ buque (orientado al rumbo) · 🛰 satélite · "
+               "🚀 misil. Epistemología (P9): observed = icono nítido + error nominal · asserted = halo "
+               "según resolución de geoloc · inferred = banda de incertidumbre (línea fina prohibida).")
     _domain_tables(payload)
     _proximity_panel(payload)
 
@@ -510,7 +539,9 @@ def _page_verify() -> None:
 def _page_intel() -> None:
     from titan_eye.analytics.intelligence import compute_tension_index, generate_alerts
 
-    payload = st.session_state.get("te_payload") or demo_payload()
+    payload = st.session_state.get("te_payload")
+    if payload is None:
+        payload, _, _ = _default_payload()
     idx = compute_tension_index(payload)
     alerts = generate_alerts(payload)
 
