@@ -102,6 +102,21 @@ El toggle *Solo militar* de la barra lateral oculta el tráfico civil.
   no por el lugar del suceso; se declara en cada ítem. Densidad = volumen de
   cobertura, no intensidad del conflicto (ADR-0003).
 
+### Eventos de conflicto en vivo · GDELT 2.0 Events (sin clave)
+
+- **Qué:** eventos de **violencia material** (combate, asalto, coerción, violencia
+  masiva — CAMEO QuadClass 4) de las últimas ~2h, geolocalizados por el **lugar
+  del suceso** (ActionGeo). Pueblan la capa de superficie + el mapa de calor; se
+  cargan **por defecto**, sin subir nada.
+- **Cómo:** ficheros `export.CSV.zip` que GDELT publica cada 15 min; el panel agrega
+  las 8 últimas ventanas, deduplica por id y cachea 15 min (`_cached_gdelt_events`).
+- **Sin clave.** Validado: ~440 eventos/2h en ~2s.
+- **Naturaleza:** `asserted` — evento extraído de prensa por GDELT, **no verificado**
+  por Titan Eye. El conteo es **densidad de reportes**, NO intensidad ni bajas
+  (ADR-0003); las víctimas nunca son peso del mapa. El halo del globo refleja la
+  resolución de geolocalización declarada (país/región/ciudad), nunca un punto
+  nítido sobre una posición aproximada (P2).
+
 ### Bases militares · OpenStreetMap / Overpass (sin clave)
 
 - **Qué:** instalaciones militares mapeadas en OSM (bases navales, aeródromos

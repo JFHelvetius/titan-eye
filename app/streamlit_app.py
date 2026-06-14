@@ -325,6 +325,53 @@ def _load_bundled_bases():
     return installations_to_entries(items), {"hash": art.content_hash, "n": len(items)}
 
 
+_GDELT_EVENTS_INTERVALS = 8     # 8 × 15 min = últimas 2 h de eventos
+_MAX_CONFLICT_EVENTS = 2500
+
+
+def _fetch_gdelt_events(intervals: int = _GDELT_EVENTS_INTERVALS, bandwidth_km: float = 80.0):
+    """Eventos de conflicto EN VIVO desde la base de eventos GDELT (sin clave).
+
+    Agrega los ficheros de las últimas `intervals` ventanas de 15 min, deduplica
+    por id y filtra a conflicto material. Resiliente: un fichero caído se salta."""
+    from titan_eye.analytics.surface.heatmap import compute_heatmap
+    from titan_eye.catalog.normalizers.gdelt_events import normalize_gdelt_events
+    from titan_eye.ingestion.sources.gdelt_events import GdeltEventsSource, recent_timestamps
+    from titan_eye.ingestion.transport import UrllibTransport
+    from titan_eye.orchestration.globe_payload import (
+        conflict_events_to_entries,
+        heatmap_to_points,
+    )
+
+    src = GdeltEventsSource(transport=UrllibTransport(retries=2))
+    latest = src.resolve_latest_timestamp()
+    events = []
+    seen: set[str] = set()
+    for ts in recent_timestamps(latest, intervals):
+        try:
+            art = src.fetch_export(ts)
+            for ev in normalize_gdelt_events(art):
+                if ev.event_id not in seen:
+                    seen.add(ev.event_id)
+                    events.append(ev)
+        except Exception:  # un fichero de 15 min caído no tumba la capa
+            continue
+        if len(events) >= _MAX_CONFLICT_EVENTS:
+            break
+    events = events[:_MAX_CONFLICT_EVENTS]
+    # Heatmap GLOBAL: rejilla gruesa (cabe en el tope de celdas) y KDE acotada a
+    # una muestra para que el cálculo sea rápido. Los puntos llevan todos los eventos.
+    pts = []
+    if events:
+        try:
+            hm = compute_heatmap(events[:1000], bandwidth_km=250.0, grid_deg=3.0)
+            pts = heatmap_to_points(hm)
+        except Exception:  # si la rejilla no cabe, mejor sin heatmap que sin capa
+            pts = []
+    return (conflict_events_to_entries(events), pts,
+            {"n": len(events), "n_cells": len(pts)})
+
+
 def _fetch_osm_bases(max_elements: int = 1500):
     """Instalaciones militares mundiales EN VIVO desde OpenStreetMap (sin clave).
 
@@ -436,8 +483,8 @@ def _build_combined(live: dict, up: dict) -> tuple[dict, list[str], list[str]]:
     if up.get("surface_file") is not None:
         try:
             entries, hm_pts, meta = _fetch_surface(up["surface_file"].getvalue(), float(up["bandwidth"]))
-            payload["domains"]["surface"] = entries
-            payload["heatmap"] = hm_pts
+            payload["domains"]["surface"] = (payload["domains"].get("surface") or []) + entries
+            payload["heatmap"] = (payload.get("heatmap") or []) + hm_pts  # se suma a GDELT
             payload["layers"]["heatmap"] = True
             notes.append(f"🔥 Tu dataset: {meta['n']} eventos · {meta['n_cells']} celdas (asserted)")
         except Exception as exc:
@@ -509,6 +556,12 @@ def _cached_osm_bases(max_elements: int):
 def _cached_bundled_bases():
     """Snapshot bundleado de bases militares OSM (instantáneo, cacheado 24h)."""
     return _load_bundled_bases()
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _cached_gdelt_events(intervals: int):
+    """Eventos de conflicto en vivo (GDELT) cacheados 15 min."""
+    return _fetch_gdelt_events(intervals)
 
 
 def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
@@ -594,6 +647,17 @@ def _default_payload(
                          f"(bases navales/aéreas/cuarteles · asserted · puede estar incompleto)")
     except Exception as exc:
         errors.append(f"Bases OSM no disponibles ahora: {type(exc).__name__}: {exc}")
+
+    try:
+        entries, hm_pts, meta = _cached_gdelt_events(_GDELT_EVENTS_INTERVALS)
+        if entries:
+            payload["domains"]["surface"] = entries
+            payload["heatmap"] = hm_pts
+            payload["layers"]["heatmap"] = True
+            notes.append(f"🔥 Conflicto EN VIVO · GDELT Events — **{meta['n']} eventos** "
+                         f"de violencia material (últimas 2h, asserted · densidad de reportes)")
+    except Exception as exc:
+        errors.append(f"Eventos GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
 
     return payload, notes, errors
 
