@@ -85,10 +85,13 @@ class UrllibTransport:
                     return TransportResponse(
                         url=full, status=resp.status, body=body, media_type=media)
             except urllib.error.HTTPError as exc:
-                # Los 4xx no se reintentan (no son transitorios); 5xx sí.
-                if exc.code < 500:
+                # 429 (rate-limit) y 5xx son transitorios → se reintentan; otros
+                # 4xx son errores definitivos del request → no se reintentan.
+                if exc.code != 429 and exc.code < 500:
                     raise TransportError(f"HTTP {exc.code} desde {full}: {exc.reason}") from exc
                 last_exc = exc
+                if exc.code == 429:
+                    time.sleep(2.0 * (attempt + 1))  # backoff mayor ante rate-limit
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 last_exc = exc
             if attempt < self.retries - 1:

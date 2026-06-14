@@ -301,6 +301,20 @@ def _fetch_surface(raw: bytes, bandwidth_km: float):
             {"hash": art.content_hash, "n": len(events), "n_cells": len(hm.points)})
 
 
+def _fetch_gdelt_news(query: str | None = None):
+    """Noticias militares/conflicto geolocalizadas EN VIVO desde GDELT (sin clave)."""
+    from titan_eye.catalog.normalizers.gdelt_doc import normalize_gdelt_doc
+    from titan_eye.ingestion.sources.gdelt import DEFAULT_QUERY, GdeltSource
+    from titan_eye.ingestion.transport import UrllibTransport
+    from titan_eye.orchestration.globe_payload import osint_to_entries
+
+    src = GdeltSource(transport=UrllibTransport(retries=2))
+    art = src.fetch_doc(query=query or DEFAULT_QUERY)
+    items = normalize_gdelt_doc(art)
+    return osint_to_entries(items), {"hash": art.content_hash, "n": len(items),
+                                     "note": art.license_note}
+
+
 def _reconstruct_ballistic(raw: bytes):
     from titan_eye.analytics.ballistic.reconstruct import reconstruct
     from titan_eye.catalog.normalizers.ballistic_report import normalize_ballistic_report
@@ -407,7 +421,7 @@ def _build_combined(live: dict, up: dict) -> tuple[dict, list[str], list[str]]:
     if up.get("osint_file") is not None:
         try:
             entries, meta = _fetch_osint(up["osint_file"].getvalue())
-            payload["osint"] = entries
+            payload["osint"] = (payload.get("osint") or []) + entries  # se suma a GDELT
             notes.append(f"✎ Tu dataset: {meta['n']} ítems OSINT (asserted · no verificado)")
         except Exception as exc:
             errors.append(f"OSINT: {type(exc).__name__}: {exc}")
@@ -436,6 +450,12 @@ def _cached_orbital_multi(groups: tuple):
 def _cached_aerial(bbox: tuple, military_only: bool = True):
     """Aeronaves en vivo (OpenSky/ADS-B) cacheadas 2 min (límite de la API pública)."""
     return _fetch_aerial(bbox, military_only=military_only)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_gdelt_news(query: str):
+    """Noticias geolocalizadas en vivo (GDELT) cacheadas 5 min."""
+    return _fetch_gdelt_news(query)
 
 
 def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
@@ -499,6 +519,18 @@ def _default_payload(
                          f"({meta['n_mil']} **militares** resaltadas, heurística) (observed)")
     except Exception as exc:
         errors.append(f"Aéreo en vivo no disponible ahora: {type(exc).__name__}: {exc}")
+
+    try:
+        from titan_eye.ingestion.sources.gdelt import DEFAULT_QUERY
+
+        entries, meta = _cached_gdelt_news(DEFAULT_QUERY)
+        if entries:
+            payload["osint"] = entries
+            payload["layers"]["osint"] = True
+            notes.append(f"✎ Noticias EN VIVO · GDELT — **{meta['n']} artículos** de "
+                         f"conflicto/militar (24h, asserted · no verificado)")
+    except Exception as exc:
+        errors.append(f"Noticias GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
 
     return payload, notes, errors
 

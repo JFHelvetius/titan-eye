@@ -88,6 +88,22 @@ Por defecto el aéreo muestra **todo el tráfico** del bbox con los militares
 **resaltados en rojo** (anti-saturación: los civiles van pequeños y sin etiqueta).
 El toggle *Solo militar* de la barra lateral oculta el tráfico civil.
 
+### Noticias en vivo · GDELT DOC 2.0 (sin clave)
+
+- **Qué:** artículos de prensa mundial sobre conflicto/militar de las últimas 24h,
+  geolocalizados y volcados en la capa OSINT. Se cargan **por defecto**, sin subir
+  nada (`_cached_gdelt_news`).
+- **Endpoint:** `https://api.gdeltproject.org/api/v2/doc/doc` (mode=artlist).
+- **Sin clave.** Tiene un **rate-limit público** agresivo (~1 req/5 s por IP); el
+  panel cachea 5 min y reintenta con backoff. Si ves «Noticias GDELT no
+  disponibles ahora», es throttling temporal: se rellena al recargar.
+- **Naturaleza:** `asserted` — afirmación de la prensa, **no verificada** por
+  Titan Eye (ADR-0020). Además se geolocaliza por **país de la FUENTE** (centroide),
+  no por el lugar del suceso; se declara en cada ítem. Densidad = volumen de
+  cobertura, no intensidad del conflicto (ADR-0003).
+
+### Clasificación militar de satélites
+
 Cada satélite se clasifica además por **misión** (la categoría del grupo CelesTrak
 de origen: navegación GPS/GLONASS/BeiDou/Galileo, militar, radar/vigilancia,
 NNSS…) y por **régimen orbital** (LEO/MEO/GEO/HEO, derivado de física pública).
