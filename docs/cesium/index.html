@@ -155,10 +155,12 @@
 
   <div class="leg" id="legend">
     <div class="lt">Identificación <span class="tog" id="legToggle">ocultar</span></div>
-    <div class="row"><img class="gl ic" id="legSat"> Satélite (orbital)</div>
+    <div class="row"><img class="gl ic" id="legSat"> Satélite — color por misión (nav/militar/radar)</div>
     <div class="row"><img class="gl ic" id="legPlane"> Aeronave civil — apunta al rumbo</div>
     <div class="row"><img class="gl ic" id="legPlaneMil"> Aeronave militar (heurística) — resaltada</div>
-    <div class="row"><img class="gl ic" id="legShip"> Buque — apunta al rumbo</div>
+    <div class="row"><img class="gl ic" id="legShip"> Buque escolta (destructor/fragata)</div>
+    <div class="row"><img class="gl ic" id="legCarrier"> Portaaviones</div>
+    <div class="row"><img class="gl ic" id="legSub"> Submarino</div>
     <div class="row"><img class="gl ic" id="legMissile"> Misil balístico (apogeo)</div>
     <div class="row"><span class="gl" style="color:var(--hostile)">▲✕</span> Lanzamiento / impacto balístico</div>
     <div class="row"><span class="gl dot" style="background:var(--surface)"></span> Evento de conflicto</div>
@@ -385,11 +387,73 @@
       if (it.category !== 'military') return INST_SPRITE.infra;
       return INST_SPRITE[it.type] || INST_SPRITE.strategic;
     }
+
+    // ── Satélites: MISMO icono, COLOR según misión (más legible que la forma a ese tamaño)
+    function satClass(m) {
+      m = (m || '').toLowerCase();
+      if (m.includes('radar')) return 'radar';
+      if (m.includes('militar')) return 'mil';
+      if (m.includes('comunic')) return 'comms';
+      if (/naveg|gps|glonass|beidou|galileo|nnss|sbas|aumentaci/.test(m)) return 'nav';
+      return 'other';
+    }
+    const SAT_SPRITE = {
+      nav: sprite('sat', '#38bdf8'), mil: sprite('sat', '#e63946'),
+      radar: sprite('sat', '#a78bfa'), comms: sprite('sat', '#34d399'),
+      other: sprite('sat', '#cfd8e3'),
+    };
+    function satImage(o) { return SAT_SPRITE[satClass(o.mission)]; }
+
+    // ── Buques: FORMA según tipo (portaaviones, submarino, anfibio, auxiliar, escolta)
+    function shipSprite(kind) {
+      const css = '#34d399';
+      const c = document.createElement('canvas'); c.width = c.height = 40;
+      const x = c.getContext('2d'); x.translate(20, 20);
+      x.strokeStyle = 'rgba(0,0,0,.85)'; x.lineWidth = 1.5; x.fillStyle = css;
+      if (kind === 'submarine') {
+        x.beginPath();
+        x.moveTo(0, -16); x.quadraticCurveTo(6, -14, 6, 0); x.quadraticCurveTo(6, 14, 0, 16);
+        x.quadraticCurveTo(-6, 14, -6, 0); x.quadraticCurveTo(-6, -14, 0, -16);
+        x.closePath(); x.fill(); x.stroke();
+        x.fillStyle = 'rgba(0,0,0,.5)'; x.fillRect(-2.5, -4, 5, 7);   // vela
+      } else if (kind === 'carrier') {
+        x.beginPath();
+        x.moveTo(0, -17); x.lineTo(8, -6); x.lineTo(8, 14); x.lineTo(-8, 14); x.lineTo(-8, -6);
+        x.closePath(); x.fill(); x.stroke();
+        x.strokeStyle = 'rgba(255,255,255,.85)';
+        x.beginPath(); x.moveTo(0, -10); x.lineTo(0, 12); x.stroke();  // eje de cubierta
+        x.fillStyle = 'rgba(255,255,255,.85)'; x.fillRect(4, -3, 3, 6); // isla
+      } else if (kind === 'amphibious') {
+        x.beginPath();
+        x.moveTo(0, -16); x.lineTo(6, -2); x.lineTo(6, 13); x.lineTo(-6, 13); x.lineTo(-6, -2);
+        x.closePath(); x.fill(); x.stroke();
+        x.clearRect(-3, 9, 6, 5);                                       // dique de popa
+      } else if (kind === 'auxiliary') {
+        x.beginPath();
+        x.moveTo(0, -15); x.lineTo(6, -1); x.lineTo(6, 13); x.lineTo(-6, 13); x.lineTo(-6, -1);
+        x.closePath(); x.fill(); x.stroke();
+        x.fillStyle = 'rgba(255,255,255,.85)'; x.beginPath(); x.arc(0, 5, 3, 0, 7); x.fill();
+      } else {  // destroyer / frigate / patrol / other: escolta esbelta
+        x.beginPath();
+        x.moveTo(0, -17); x.lineTo(5, -2); x.lineTo(5, 13); x.lineTo(-5, 13); x.lineTo(-5, -2);
+        x.closePath(); x.fill(); x.stroke();
+        x.fillStyle = 'rgba(255,255,255,.85)'; x.fillRect(-2.5, -1, 5, 6);
+      }
+      return c.toDataURL('image/png');
+    }
+    const SHIP_SPRITE = {
+      carrier: shipSprite('carrier'), submarine: shipSprite('submarine'),
+      amphibious: shipSprite('amphibious'), auxiliary: shipSprite('auxiliary'),
+      destroyer: shipSprite('destroyer'), frigate: shipSprite('destroyer'),
+      patrol: shipSprite('patrol'), other: shipSprite('other'),
+    };
+    function shipImage(v) { return SHIP_SPRITE[v.vessel_type] || SHIP_SPRITE.other; }
     const R = Cesium.Math.toRadians;
 
     // La leyenda usa los MISMOS sprites que el globo (identificación 1:1)
-    const _legMap = { legSat: SPRITE.sat, legPlane: SPRITE.plane, legPlaneMil: SPRITE.planeMil,
-                      legShip: SPRITE.ship, legMissile: SPRITE.missile,
+    const _legMap = { legSat: SAT_SPRITE.nav, legPlane: SPRITE.plane, legPlaneMil: SPRITE.planeMil,
+                      legShip: SHIP_SPRITE.destroyer, legCarrier: SHIP_SPRITE.carrier,
+                      legSub: SHIP_SPRITE.submarine, legMissile: SPRITE.missile,
                       legNaval: INST_SPRITE.naval_base, legAir: INST_SPRITE.air_base,
                       legArmy: INST_SPRITE.army_base, legInfra: INST_SPRITE.infra };
     for (const id in _legMap) { const el = document.getElementById(id); if (el) el.src = _legMap[id]; }
@@ -447,8 +511,8 @@
       if (show('orbital')) (d.orbital || []).forEach(o => {
         const ent = viewer.entities.add({
           name: o.name, position: Cesium.Cartesian3.fromDegrees(o.lon, o.lat, (o.alt_km || 0) * 1000),
-          billboard: { image: SPRITE.sat, scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER },
-          // Sin disableDepthTestDistance: el globo opaco oculta los objetos del otro lado.
+          billboard: { image: satImage(o), scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER },
+          // Color del satélite = misión. Sin disableDepthTestDistance: globo opaco oculta el otro lado.
           label: { text: o.name, font: '11px Inter, sans-serif', fillColor: COL.sat, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
                    style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(10, 0), showBackground: true,
                    backgroundColor: new Cesium.Color(.03, .05, .09, .75) },
@@ -501,7 +565,7 @@
         const stale = (v.age_s ?? 0) > 600;
         const ent = viewer.entities.add({
           name: v.name || v.id, position: Cesium.Cartesian3.fromDegrees(v.lon, v.lat, 0),
-          billboard: { image: SPRITE.ship, scale: stale ? .55 : .72, color: Cesium.Color.WHITE.withAlpha(stale ? .55 : 1),
+          billboard: { image: shipImage(v), scale: stale ? .55 : .72, color: Cesium.Color.WHITE.withAlpha(stale ? .55 : 1),
                        rotation: R(-(v.course ?? 0)),
                        verticalOrigin: Cesium.VerticalOrigin.CENTER },
           label: { text: v.name || '', font: '10px JetBrains Mono, monospace', fillColor: COL.naval,
