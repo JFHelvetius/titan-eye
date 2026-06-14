@@ -156,6 +156,38 @@ _MIL_SAT_GROUPS: tuple[str, ...] = (
     "musson",     # navegación militar rusa (Parus/Tsikada)
 )
 
+# Misión declarada por el grupo de origen de CelesTrak (clasificación honesta:
+# es la categoría que da la propia fuente, NO una inferencia de Titan Eye).
+_GROUP_MISSION: dict[str, str] = {
+    "military": "Militar (varios)",
+    "gps-ops": "Navegación · GPS (USSF)",
+    "glo-ops": "Navegación · GLONASS (RU)",
+    "beidou": "Navegación · BeiDou (PLA/CN)",
+    "galileo": "Navegación · Galileo (UE)",
+    "sbas": "Aumentación de navegación (SBAS)",
+    "radar": "Radar / vigilancia",
+    "nnss": "Navegación · NNSS (US Navy)",
+    "musson": "Navegación militar (RU)",
+    "molniya": "Comms / alerta temprana — órbita Molniya (RU)",
+    "gorizont": "Comunicaciones militares (RU)",
+    "raduga": "Comunicaciones militares (RU)",
+    "geo": "Geoestacionario (comms/SIGINT)",
+    "active": "Catálogo general (activo)",
+    "stations": "Estación espacial",
+    "visual": "Visible a simple vista",
+}
+
+
+def _orbit_regime(alt_km: float, ecc: float) -> str:
+    """Régimen orbital a partir de física pública (no clasificado)."""
+    if ecc >= 0.25:
+        return "HEO (muy elíptica)"   # p. ej. Molniya: alerta temprana/comms
+    if alt_km < 2000:
+        return "LEO (baja)"            # recon/ISR, observación
+    if alt_km < 30000:
+        return "MEO (media)"           # navegación (GPS/GLONASS/Galileo/BeiDou)
+    return "GEO (geoestacionaria)"     # comms/alerta temprana/SIGINT
+
 
 def _fetch_orbital(group):
     from titan_eye.catalog.normalizers.tle import normalize_tles
@@ -200,6 +232,7 @@ def _fetch_orbital_multi(groups):
 
     seen: set[int] = set()
     elements = []
+    norad_group: dict[int, str] = {}   # de qué grupo CelesTrak vino cada satélite
     ok_groups, failed = [], []
     last_err = ""
     with ThreadPoolExecutor(max_workers=min(4, len(groups))) as pool:
@@ -214,6 +247,7 @@ def _fetch_orbital_multi(groups):
                 if el.norad_cat_id not in seen:
                     seen.add(el.norad_cat_id)
                     elements.append(el)
+                    norad_group[el.norad_cat_id] = g
             ok_groups.append(g)
         except Exception as exc:  # parseo fallido de un grupo no tumba la capa
             failed.append(g)
@@ -224,7 +258,19 @@ def _fetch_orbital_multi(groups):
     with_t = orbital_elements_to_entries(elements[:_TRACKS_FOR_FIRST], with_tracks=True)
     no_t = orbital_elements_to_entries(elements[_TRACKS_FOR_FIRST:], with_tracks=False)
     entries = with_t + no_t
-    meta = {"n": len(entries), "groups_ok": ok_groups, "groups_failed": failed}
+    # Clasificación militar honesta: misión = la del grupo de origen; régimen =
+    # física pública. Sirven como ejes de filtro (kind) y para el popup del globo.
+    by_mission: dict[str, int] = {}
+    for e in entries:
+        g = norad_group.get(e["id"], "")
+        mission = _GROUP_MISSION.get(g, g or "—")
+        e["mission"] = mission
+        e["src_group"] = g
+        e["regime"] = _orbit_regime(e.get("alt_km", 0.0), e.get("ecc", 0.0))
+        e["kind"] = mission          # eje de filtro por misión
+        by_mission[mission] = by_mission.get(mission, 0) + 1
+    meta = {"n": len(entries), "groups_ok": ok_groups, "groups_failed": failed,
+            "by_mission": by_mission}
     if not entries:
         # No cachear un resultado vacío: que el siguiente rerun reintente.
         raise RuntimeError(
@@ -424,6 +470,10 @@ def _default_payload(
             payload["domains"]["orbital"] = entries
             note = (f"🛰 Orbital EN VIVO · CelesTrak — **{meta['n']} satélites** "
                     f"militares/doble-uso de {len(meta['groups_ok'])} grupos (observed)")
+            bm = meta.get("by_mission") or {}
+            if bm:
+                top = sorted(bm.items(), key=lambda kv: -kv[1])[:4]
+                note += " · " + ", ".join(f"{m.split(' · ')[0].split(' (')[0]}: {n}" for m, n in top)
             if meta["groups_failed"]:
                 note += f" · grupos no disponibles ahora: {', '.join(meta['groups_failed'])}"
             notes.append(note)
@@ -476,8 +526,13 @@ def _domain_tables(payload: dict) -> None:
     d = payload["domains"]
     if d["orbital"]:
         with st.expander(f"🛰 Satélites ({len(d['orbital'])}) · observed", expanded=False):
-            st.dataframe([{k: r[k] for k in ("id", "name", "alt_km", "incl", "period_min", "err_km")}
+            st.dataframe([{**{k: r[k] for k in ("id", "name")},
+                           "misión": r.get("mission", ""), "régimen": r.get("regime", ""),
+                           **{k: r[k] for k in ("alt_km", "incl", "period_min", "err_km")}}
                           for r in d["orbital"]], use_container_width=True, hide_index=True)
+            st.caption("**Misión** = categoría del grupo CelesTrak de origen (clasificación de la "
+                       "fuente, no de Titan Eye). **Régimen** orbital derivado de física pública. "
+                       "Filtra por misión arriba (p. ej. solo navegación o solo militar).")
     if d["aerial"]:
         n_mil = sum(1 for r in d["aerial"] if r.get("mil"))
         with st.expander(f"✈ Aeronaves ({len(d['aerial'])}, {n_mil} militares) · observed",

@@ -89,12 +89,15 @@ def orbital_elements_to_entries(
             "lat": round(now_pt.latitude, 3),
             "alt_km": round(now_pt.altitude_km, 1),
             "incl": round(el.inclination_deg, 2),
+            "ecc": round(el.eccentricity, 4),
             "period_min": round(el.period_min, 1),
             "err_km": err_km,
             "owner": el.intl_designator or "",
             "track": track,
             "country": "",   # el TLE no lleva operador/país (diferido: satcat)
-            "kind": "",      # clase de satélite: requiere satcat (diferido)
+            "kind": "",      # clase/misión: la fija el orquestador desde el grupo CelesTrak
+            "mission": "",   # misión declarada por el grupo de origen (ver app)
+            "regime": "",    # régimen orbital (LEO/MEO/GEO/HEO) derivado de la física
         })
     return out
 

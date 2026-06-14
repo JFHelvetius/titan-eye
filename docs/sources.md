@@ -88,6 +88,12 @@ Por defecto el aéreo muestra **todo el tráfico** del bbox con los militares
 **resaltados en rojo** (anti-saturación: los civiles van pequeños y sin etiqueta).
 El toggle *Solo militar* de la barra lateral oculta el tráfico civil.
 
+Cada satélite se clasifica además por **misión** (la categoría del grupo CelesTrak
+de origen: navegación GPS/GLONASS/BeiDou/Galileo, militar, radar/vigilancia,
+NNSS…) y por **régimen orbital** (LEO/MEO/GEO/HEO, derivado de física pública).
+Son clasificaciones de la fuente y de la física, no inferencias de Titan Eye; se
+pueden filtrar por misión en el panel (p. ej. solo navegación o solo militar).
+
 ---
 
 ## Requieren clave gratuita o un dataset que aportas tú

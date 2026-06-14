@@ -385,6 +385,8 @@
                    backgroundColor: new Cesium.Color(.03, .05, .09, .75) },
           description: `<h3>${o.name}</h3>` + epBadge('observed') + htmlInfo([
             ['Dominio', 'Orbital (satélite)'], ['NORAD', o.id ?? '—'], ['Operador', o.owner ?? '—'],
+            ...(o.mission ? [['Misión (grupo CelesTrak)', o.mission]] : []),
+            ...(o.regime ? [['Régimen orbital', o.regime]] : []),
             ['Altitud', (o.alt_km ?? 0).toFixed(0) + ' km'], ['Inclinación', (o.incl ?? 0).toFixed(2) + '°'],
             ['Período', (o.period_min ?? 0).toFixed(1) + ' min'], ['Error SGP4', '~' + (o.err_km ?? 2).toFixed(1) + ' km (ADR-0003)'],
           ]),
