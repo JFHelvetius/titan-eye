@@ -52,8 +52,12 @@ class GdeltSource:
         timespan: str = "24h",
         max_records: int = 250,
         max_age_seconds: float = DEFAULT_MAX_AGE_SECONDS,
+        timeout: float = 8.0,
     ) -> RawArtifact:
-        """Adquiere el listado de artículos GDELT y lo sella como RawArtifact."""
+        """Adquiere el listado de artículos GDELT y lo sella como RawArtifact.
+
+        `timeout` corto a propósito: la DOC API limita por IP (429) y si está
+        saturada conviene rendirse rápido (es una capa secundaria)."""
         params = {
             "query": query,
             "mode": "artlist",
@@ -68,7 +72,7 @@ class GdeltSource:
             cached = self.cache.get_fresh(cache_key, max_age_seconds=max_age_seconds, now=now)
             if cached is not None:
                 return cached
-        resp = self.transport.get(GDELT_DOC_URL, params=params)
+        resp = self.transport.get(GDELT_DOC_URL, params=params, timeout=timeout)
         artifact = RawArtifact.seal(
             source_id=GDELT_SOURCE_ID,
             domain=Domain.OSINT,

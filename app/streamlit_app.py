@@ -418,8 +418,9 @@ def _fetch_gdelt_news(query: str | None = None):
     from titan_eye.ingestion.transport import UrllibTransport
     from titan_eye.orchestration.globe_payload import osint_to_entries
 
-    src = GdeltSource(transport=UrllibTransport(retries=2))
-    art = src.fetch_doc(query=query or DEFAULT_QUERY)
+    # retries=1 + timeout corto: si GDELT limita (429) se rinde rápido (capa 2ª).
+    src = GdeltSource(transport=UrllibTransport(retries=1))
+    art = src.fetch_doc(query=query or DEFAULT_QUERY, timeout=5.0)
     items = normalize_gdelt_doc(art)
     return osint_to_entries(items), {"hash": art.content_hash, "n": len(items),
                                      "note": art.license_note}
@@ -600,26 +601,74 @@ def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
     return tuple(g.strip() for g in spec.split(",") if g.strip())
 
 
+def _run_parallel(jobs: dict) -> dict:
+    """Ejecuta varias funciones cacheadas EN PARALELO (hilos) y devuelve
+    {nombre: (valor, excepción)}. Adjunta el contexto de Streamlit a cada hilo
+    para que `st.cache_data` funcione sin avisos."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    ctx = None
+    add_ctx = None
+    try:
+        from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+        ctx, add_ctx = get_script_run_ctx(), add_script_run_ctx
+    except Exception:
+        pass
+
+    def _init() -> None:
+        if add_ctx and ctx:
+            add_ctx(threading.current_thread(), ctx)
+
+    def _call(fn, args):
+        try:
+            return (fn(*args), None)
+        except Exception as exc:  # se reporta arriba; ningún feed tumba al resto
+            return (None, exc)
+
+    out: dict = {}
+    with ThreadPoolExecutor(max_workers=max(2, len(jobs)), initializer=_init) as ex:
+        futs = {name: ex.submit(_call, fn, args) for name, (fn, args) in jobs.items()}
+        for name, fut in futs.items():
+            out[name] = fut.result()
+    return out
+
+
 def _default_payload(
     *, orbital_group: str = "military", aerial_bbox: tuple | None = None,
     military_only: bool = True,
 ) -> tuple[dict, list[str], list[str]]:
     """Vista base con SOLO datos reales EN VIVO de fuentes públicas sin clave.
 
-    - Orbital: agrega varios grupos militares/de doble uso de CelesTrak (GPS,
-      GLONASS, BeiDou, Galileo, military…) → SGP4. Mucho volumen, foco militar.
-    - Aéreo: TODO el tráfico OpenSky (ADS-B) del área, con las aeronaves militares
-      resaltadas por heurística pública. `military_only` lo reduce a solo militares.
-    Los dominios que requieren clave de API (AIS marítimo) o un dataset público
-    se añaden subiéndolos."""
+    Todos los feeds se descargan EN PARALELO (cada uno cacheado por separado), así
+    que la primera carga tarda lo que el más lento, no la suma. Un feed caído es un
+    aviso no fatal; el resto del panel carga igual."""
+    from titan_eye.ingestion.sources.gdelt import DEFAULT_QUERY
+
     payload = _empty_payload()
     notes: list[str] = []
     errors: list[str] = []
     bbox = aerial_bbox or _DEFAULT_AERIAL_BBOX
-
     groups = _resolve_orbital_groups(orbital_group)
-    try:
-        entries, meta = _cached_orbital_multi(groups)
+    has_ais = bool(_aisstream_key())
+
+    jobs = {
+        "orbital": (_cached_orbital_multi, (groups,)),
+        "aerial": (_cached_aerial, (bbox, military_only)),
+        "news": (_cached_gdelt_news, (DEFAULT_QUERY,)),
+        "bases": (_cached_bundled_bases, ()),
+        "events": (_cached_gdelt_events, (_GDELT_EVENTS_INTERVALS,)),
+    }
+    if has_ais:
+        jobs["ais"] = (_cached_aisstream, (6.0,))
+    res = _run_parallel(jobs)
+
+    # ── Orbital ──
+    val, exc = res["orbital"]
+    if exc is not None:
+        errors.append(f"Orbital en vivo no disponible ahora: {type(exc).__name__}: {exc}")
+    else:
+        entries, meta = val
         if entries:
             payload["domains"]["orbital"] = entries
             note = (f"🛰 Orbital EN VIVO · CelesTrak — **{meta['n']} satélites** "
@@ -631,14 +680,13 @@ def _default_payload(
             if meta["groups_failed"]:
                 note += f" · grupos no disponibles ahora: {', '.join(meta['groups_failed'])}"
             notes.append(note)
-        else:
-            errors.append("Orbital: ningún grupo respondió (red CelesTrak caída ahora mismo). "
-                          "Se reintenta solo al recargar.")
-    except Exception as exc:
-        errors.append(f"Orbital en vivo no disponible ahora: {type(exc).__name__}: {exc}")
 
-    try:
-        entries, meta = _cached_aerial(bbox, military_only)
+    # ── Aéreo ──
+    val, exc = res["aerial"]
+    if exc is not None:
+        errors.append(f"Aéreo en vivo no disponible ahora: {type(exc).__name__}: {exc}")
+    else:
+        entries, meta = val
         payload["domains"]["aerial"] = entries
         scope = "en el mundo" if not bbox else "en el área"
         if military_only:
@@ -651,52 +699,49 @@ def _default_payload(
         else:
             notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — **{meta['n']} aeronaves** "
                          f"({meta['n_mil']} **militares** resaltadas, heurística) (observed)")
-    except Exception as exc:
-        errors.append(f"Aéreo en vivo no disponible ahora: {type(exc).__name__}: {exc}")
 
-    try:
-        from titan_eye.ingestion.sources.gdelt import DEFAULT_QUERY
-
-        entries, meta = _cached_gdelt_news(DEFAULT_QUERY)
-        if entries:
-            payload["osint"] = entries
-            payload["layers"]["osint"] = True
-            notes.append(f"✎ Noticias EN VIVO · GDELT — **{meta['n']} artículos** de "
-                         f"conflicto/militar (24h, asserted · no verificado)")
-    except Exception as exc:
+    # ── Noticias GDELT ──
+    val, exc = res["news"]
+    if exc is not None:
         errors.append(f"Noticias GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
+    elif val[0]:
+        payload["osint"] = val[0]
+        payload["layers"]["osint"] = True
+        notes.append(f"✎ Noticias EN VIVO · GDELT — **{val[1]['n']} artículos** de "
+                     f"conflicto/militar (24h, asserted · no verificado)")
 
-    try:
-        entries, meta = _cached_bundled_bases()
-        if entries:
-            payload["installations"] = entries
-            payload["layers"]["installations"] = True
-            notes.append(f"🏛 Bases militares · OpenStreetMap — **{meta['n']} instalaciones** "
-                         f"(bases navales/aéreas/cuarteles · asserted · puede estar incompleto)")
-    except Exception as exc:
+    # ── Bases OSM (snapshot bundleado) ──
+    val, exc = res["bases"]
+    if exc is not None:
         errors.append(f"Bases OSM no disponibles ahora: {type(exc).__name__}: {exc}")
+    elif val[0]:
+        payload["installations"] = val[0]
+        payload["layers"]["installations"] = True
+        notes.append(f"🏛 Bases militares · OpenStreetMap — **{val[1]['n']} instalaciones** "
+                     f"(bases navales/aéreas/cuarteles · asserted · puede estar incompleto)")
 
-    try:
-        entries, hm_pts, meta = _cached_gdelt_events(_GDELT_EVENTS_INTERVALS)
+    # ── Eventos de conflicto GDELT ──
+    val, exc = res["events"]
+    if exc is not None:
+        errors.append(f"Eventos GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
+    else:
+        entries, hm_pts, meta = val
         if entries:
             payload["domains"]["surface"] = entries
             payload["heatmap"] = hm_pts
             payload["layers"]["heatmap"] = True
             notes.append(f"🔥 Conflicto EN VIVO · GDELT Events — **{meta['n']} eventos** "
-                         f"de violencia material (últimas 2h, asserted · densidad de reportes)")
-    except Exception as exc:
-        errors.append(f"Eventos GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
+                         f"de violencia material (última hora, asserted · densidad de reportes)")
 
-    # Marítimo AIS: solo si hay token configurado (gratis, pero requiere registro).
-    if _aisstream_key():
-        try:
-            entries, meta = _cached_aisstream(6.0)
-            if entries:
-                payload["domains"]["maritime"] = entries
-                notes.append(f"⚓ Buques EN VIVO · AISStream — **{meta['n']} buques** "
-                             f"(AIS autodeclarado · falsificable, los de guerra lo apagan)")
-        except Exception as exc:
+    # ── Marítimo AIS (solo si hay token) ──
+    if has_ais:
+        val, exc = res["ais"]
+        if exc is not None:
             errors.append(f"AISStream no disponible ahora: {type(exc).__name__}: {exc}")
+        elif val[0]:
+            payload["domains"]["maritime"] = val[0]
+            notes.append(f"⚓ Buques EN VIVO · AISStream — **{val[1]['n']} buques** "
+                         f"(AIS autodeclarado · falsificable, los de guerra lo apagan)")
     else:
         notes.append("⚓ Marítimo (AIS): añade tu token gratuito `AISSTREAM_API_KEY` en "
                      "*Settings → Secrets* de Streamlit para activar los buques en vivo.")
