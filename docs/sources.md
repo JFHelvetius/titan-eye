@@ -60,6 +60,26 @@ respetar los límites de cada API.
   *spoofable*. Los vuelos militares a menudo apagan o falsean el transpondedor.
   Ausencia ≠ inexistencia.
 
+#### Filtro «solo militar» (heurística, activado por defecto)
+
+El foco de Titan Eye es lo militar, así que el panel **filtra el tráfico aéreo a
+las aeronaves probablemente militares** con la técnica estándar de la comunidad
+ADS-B (`src/titan_eye/analytics/military_filter.py`), combinando dos señales
+**públicas**:
+
+1. **Prefijo de indicativo** (callsign): p. ej. `RCH` = USAF Reach, `RRR` = RAF.
+2. **Rango ICAO24** (dirección hex del transpondedor): bloques que la OACI/Estados
+   asignan a aeronaves militares/de Estado (la misma lista que usa `readsb`).
+
+⚠️ **Honestidad (P9):** la posición sigue siendo `observed`, pero la etiqueta
+«militar» es una **inferencia heurística AFIRMADA, no verificada**. Da falsos
+positivos (un civil con indicativo coincidente) y falsos negativos (un militar con
+indicativo neutro o el ADS-B apagado). Desactiva *Solo militar* en la barra lateral
+para ver todo el tráfico, o amplía el bbox si no aparece nada.
+
+Para satélites, el panel usa por defecto el grupo **`military`** de CelesTrak (no
+`stations`), que es realmente la lista de satélites militares.
+
 ---
 
 ## Requieren clave gratuita o un dataset que aportas tú

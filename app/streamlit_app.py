@@ -115,7 +115,8 @@ def _fetch_maritime(raw: bytes):
 
 
 # ── Fetchers por dominio (cada uno aislado; el fallo de uno no tumba el panel) ──
-def _fetch_aerial(bbox):
+def _fetch_aerial(bbox, *, military_only: bool = True):
+    from titan_eye.analytics.military_filter import military_match
     from titan_eye.catalog.normalizers.opensky_states import normalize_states
     from titan_eye.ingestion.sources.opensky import OpenSkySource
     from titan_eye.ingestion.transport import UrllibTransport
@@ -124,8 +125,21 @@ def _fetch_aerial(bbox):
     src = OpenSkySource(transport=UrllibTransport())
     art = src.fetch_states(bbox=bbox)
     states = normalize_states(art)
-    return aerial_states_to_entries(states), {"hash": art.content_hash, "n": len(states),
-                                              "note": art.license_note}
+    n_total = len(states)
+    entries = aerial_states_to_entries(states)
+    # Clasificación heurística militar (asserted): la posición sigue siendo observed.
+    mil = 0
+    kept = []
+    for e in entries:
+        reason = military_match(e.get("callsign"), e.get("id"))
+        if reason:
+            e["kind"], e["mil"] = "militar", reason
+            mil += 1
+            kept.append(e)
+        elif not military_only:
+            kept.append(e)
+    return kept, {"hash": art.content_hash, "n": len(kept), "n_total": n_total,
+                  "n_mil": mil, "military_only": military_only, "note": art.license_note}
 
 
 def _fetch_orbital(group):
@@ -184,116 +198,93 @@ def _reconstruct_ballistic(raw: bytes):
 
 
 # ── Panel de situación ────────────────────────────────────────────────────────
-def _sidebar_controls() -> dict:
-    st.sidebar.markdown("### Panel de situación")
-    st.sidebar.caption("Activa dominios y pulsa **Actualizar**. Cada uno se "
-                       "ingiere de su fuente pública con procedencia por hash.")
+def _sidebar_live_feeds() -> dict:
+    """Barra lateral SLIM: solo ajustes finos de los feeds en vivo (secundario)."""
+    st.sidebar.markdown("#### Feeds en vivo (avanzado)")
+    st.sidebar.caption("El panel ya carga satélites y aeronaves **militares** en vivo. "
+                       "Estos ajustes son opcionales.")
     cfg: dict = {}
-
-    cfg["aerial"] = st.sidebar.checkbox("✈ Aéreo · OpenSky (ADS-B)", value=False)
-    cfg["aerial_bbox"] = st.sidebar.text_input("bbox aéreo (lat_min,lat_max,lon_min,lon_max)",
-                                               value="35,60,-10,40", disabled=not cfg["aerial"])
-
-    cfg["orbital"] = st.sidebar.checkbox("🛰 Orbital · CelesTrak (TLE)", value=False)
-    cfg["orbital_group"] = st.sidebar.text_input("GROUP orbital", value="stations",
-                                                disabled=not cfg["orbital"])
-
-    cfg["surface"] = st.sidebar.checkbox("🔥 Superficie · eventos + heatmap", value=False)
-    cfg["surface_file"] = st.sidebar.file_uploader("Dataset de eventos (JSON)", type=["json"],
-                                                  disabled=not cfg["surface"])
-    cfg["bandwidth"] = st.sidebar.slider("Bandwidth KDE (km)", 10, 200, 50, 5,
-                                        disabled=not cfg["surface"])
-
-    cfg["maritime"] = st.sidebar.checkbox("⚓ Marítimo · buques (AIS)", value=False)
-    cfg["maritime_file"] = st.sidebar.file_uploader("Dataset AIS (JSON)", type=["json"],
-                                                   disabled=not cfg["maritime"])
-
-    cfg["ballistic"] = st.sidebar.checkbox("🚀 Suborbital · reporte balístico", value=False)
-    cfg["ballistic_file"] = st.sidebar.file_uploader("Reporte balístico (JSON)", type=["json"],
-                                                    disabled=not cfg["ballistic"])
-
-    cfg["installations"] = st.sidebar.checkbox("🏛 Bases e infraestructura (referencia)", value=False)
-    cfg["installations_file"] = st.sidebar.file_uploader("Dataset de instalaciones (JSON)", type=["json"],
-                                                        disabled=not cfg["installations"])
-
-    cfg["osint"] = st.sidebar.checkbox("✎ OSINT · noticias/RRSS", value=False)
-    cfg["osint_file"] = st.sidebar.file_uploader("Dataset OSINT (JSON)", type=["json"],
-                                                disabled=not cfg["osint"])
-
-    cfg["go"] = st.sidebar.button("⟳ Actualizar panel", use_container_width=True, type="primary")
-    st.sidebar.caption("Sin selección, el panel carga **datos reales EN VIVO**: satélites "
-                       "(CelesTrak) y aeronaves (OpenSky/ADS-B). Nada inventado.")
+    cfg["military_only"] = st.sidebar.toggle("Solo militar (heurística)", value=True,
+        help="Filtra aeronaves por indicativo + rango ICAO24. Apágalo para ver todo el tráfico.")
+    cfg["orbital_group"] = st.sidebar.text_input(
+        "Grupo orbital (CelesTrak)", value="military",
+        help="p. ej. military, active, stations, visual")
+    cfg["aerial_bbox"] = st.sidebar.text_input(
+        "bbox aéreo (lat_min,lat_max,lon_min,lon_max)", value="25,70,-12,60")
+    cfg["go"] = st.sidebar.button("⟳ Recargar feeds en vivo", use_container_width=True)
     return cfg
 
 
-def _build_combined(cfg) -> tuple[dict, list[str], list[str]]:
-    """Ingiere los dominios activos y los combina en un único payload del globo."""
-    payload = _empty_payload()
-    notes: list[str] = []
-    errors: list[str] = []
+def _upload_panel() -> dict:
+    """Acción PRINCIPAL del panel: subir tus propios datasets (foco del usuario)."""
+    up: dict = {}
+    with st.expander("📤 **Sube tu dataset** — añade tus capas al globo (JSON)", expanded=True):
+        st.caption("Arrastra un JSON por dominio. Cada dato se sella con su **hash de "
+                   "procedencia** (ADR-0005) y su etiqueta epistémica (P9). Formatos en "
+                   "`docs/sources.md`. Lo que subas se combina con los feeds en vivo.")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            up["maritime_file"] = st.file_uploader("⚓ Buques · AIS", type=["json"], key="up_mar")
+            up["surface_file"] = st.file_uploader("🔥 Eventos de conflicto", type=["json"], key="up_srf")
+        with c2:
+            up["ballistic_file"] = st.file_uploader("🚀 Reporte balístico", type=["json"], key="up_bal")
+            up["installations_file"] = st.file_uploader("🏛 Bases e infraestructura", type=["json"], key="up_inst")
+        with c3:
+            up["osint_file"] = st.file_uploader("✎ OSINT noticias/RRSS", type=["json"], key="up_osint")
+            up["bandwidth"] = st.slider("Bandwidth KDE heatmap (km)", 10, 200, 50, 5)
+    return up
 
-    if cfg["aerial"]:
-        try:
-            entries, meta = _fetch_aerial(_parse_bbox(cfg["aerial_bbox"]))
-            payload["domains"]["aerial"] = entries
-            notes.append(f"Aéreo: {meta['n']} aeronaves · `{meta['hash'][:10]}…` (observed)")
-        except Exception as exc:
-            errors.append(f"Aéreo: {type(exc).__name__}: {exc}")
 
-    if cfg["orbital"]:
-        try:
-            entries, meta = _fetch_orbital(cfg["orbital_group"].strip() or "stations")
-            payload["domains"]["orbital"] = entries
-            notes.append(f"Orbital: {meta['n']} satélites · `{meta['hash'][:10]}…` (observed)")
-        except Exception as exc:
-            errors.append(f"Orbital: {type(exc).__name__}: {exc}")
+def _build_combined(live: dict, up: dict) -> tuple[dict, list[str], list[str]]:
+    """Feeds en vivo (orbital+aéreo militar) + cualquier dataset subido por el usuario."""
+    payload, notes, errors = _default_payload(
+        orbital_group=(live.get("orbital_group") or "military").strip(),
+        aerial_bbox=_parse_bbox(live.get("aerial_bbox")),
+        military_only=live.get("military_only", True),
+    )
 
-    if cfg["maritime"] and cfg["maritime_file"] is not None:
+    if up.get("maritime_file") is not None:
         try:
-            entries, meta = _fetch_maritime(cfg["maritime_file"].getvalue())
+            entries, meta = _fetch_maritime(up["maritime_file"].getvalue())
             payload["domains"]["maritime"] = entries
-            notes.append(f"Marítimo: {meta['n']} buques · `{meta['hash'][:10]}…` (observed/AIS)")
+            notes.append(f"⚓ Tu dataset: {meta['n']} buques · `{meta['hash'][:10]}…` (observed/AIS)")
         except Exception as exc:
             errors.append(f"Marítimo: {type(exc).__name__}: {exc}")
 
-    if cfg["surface"] and cfg["surface_file"] is not None:
+    if up.get("surface_file") is not None:
         try:
-            entries, hm_pts, meta = _fetch_surface(cfg["surface_file"].getvalue(), float(cfg["bandwidth"]))
+            entries, hm_pts, meta = _fetch_surface(up["surface_file"].getvalue(), float(up["bandwidth"]))
             payload["domains"]["surface"] = entries
             payload["heatmap"] = hm_pts
             payload["layers"]["heatmap"] = True
-            notes.append(f"Superficie: {meta['n']} eventos · {meta['n_cells']} celdas (asserted)")
+            notes.append(f"🔥 Tu dataset: {meta['n']} eventos · {meta['n_cells']} celdas (asserted)")
         except Exception as exc:
             errors.append(f"Superficie: {type(exc).__name__}: {exc}")
 
-    if cfg["ballistic"] and cfg["ballistic_file"] is not None:
+    if up.get("ballistic_file") is not None:
         try:
-            entries, meta = _reconstruct_ballistic(cfg["ballistic_file"].getvalue())
+            entries, meta = _reconstruct_ballistic(up["ballistic_file"].getvalue())
             payload["domains"]["suborbital"] = entries
-            notes.append(f"Suborbital: reconstruido · banda ±{meta['band_km']:.0f} km (inferred)")
+            notes.append(f"🚀 Tu reporte: reconstruido · banda ±{meta['band_km']:.0f} km (inferred)")
         except Exception as exc:
             errors.append(f"Suborbital: {type(exc).__name__}: {exc}")
 
-    if cfg["installations"] and cfg["installations_file"] is not None:
+    if up.get("installations_file") is not None:
         try:
-            entries, meta = _fetch_installations(cfg["installations_file"].getvalue())
+            entries, meta = _fetch_installations(up["installations_file"].getvalue())
             payload["installations"] = entries
-            notes.append(f"Referencia: {meta['n']} instalaciones (asserted, estático)")
+            notes.append(f"🏛 Tu dataset: {meta['n']} instalaciones (asserted, estático)")
         except Exception as exc:
             errors.append(f"Instalaciones: {type(exc).__name__}: {exc}")
 
-    if cfg["osint"] and cfg["osint_file"] is not None:
+    if up.get("osint_file") is not None:
         try:
-            entries, meta = _fetch_osint(cfg["osint_file"].getvalue())
+            entries, meta = _fetch_osint(up["osint_file"].getvalue())
             payload["osint"] = entries
-            notes.append(f"OSINT: {meta['n']} ítems (asserted, procedencia · no verificado)")
+            notes.append(f"✎ Tu dataset: {meta['n']} ítems OSINT (asserted · no verificado)")
         except Exception as exc:
             errors.append(f"OSINT: {type(exc).__name__}: {exc}")
 
-    any_data = (any(payload["domains"].values()) or payload["heatmap"]
-                or payload.get("installations") or payload.get("osint"))
-    if not any_data:
-        return _default_payload()
     return payload, notes, errors
 
 
@@ -309,43 +300,53 @@ def _cached_orbital(group: str):
 
 
 @st.cache_data(ttl=120, show_spinner=False)
-def _cached_aerial(bbox: tuple):
+def _cached_aerial(bbox: tuple, military_only: bool = True):
     """Aeronaves en vivo (OpenSky/ADS-B) cacheadas 2 min (límite de la API pública)."""
-    return _fetch_aerial(bbox)
+    return _fetch_aerial(bbox, military_only=military_only)
 
 
-def _default_payload() -> tuple[dict, list[str], list[str]]:
-    """Vista por defecto SIN que el usuario suba nada: SOLO datos reales EN VIVO
-    de fuentes públicas sin clave (no hay datos inventados, P2/honestidad).
+def _default_payload(
+    *, orbital_group: str = "military", aerial_bbox: tuple | None = None,
+    military_only: bool = True,
+) -> tuple[dict, list[str], list[str]]:
+    """Vista base con SOLO datos reales EN VIVO de fuentes públicas sin clave,
+    por defecto FILTRADOS a lo militar (que es el foco).
 
-    - Orbital: satélites reales vía CelesTrak (TLE) → SGP4.
-    - Aéreo: aeronaves reales vía OpenSky (ADS-B), bbox por defecto.
+    - Orbital: grupo `military` de CelesTrak (satélites militares) → SGP4.
+    - Aéreo: aeronaves reales vía OpenSky (ADS-B) clasificadas como militares por
+      heurística pública (indicativo + rango ICAO24).
     Los dominios que requieren clave de API (AIS marítimo) o un dataset público
-    (eventos de conflicto, reportes balísticos, instalaciones, OSINT) quedan
-    vacíos hasta que el usuario los active en la barra lateral."""
+    (eventos, reportes balísticos, instalaciones, OSINT) se añaden subiéndolos."""
     payload = _empty_payload()
     notes: list[str] = []
     errors: list[str] = []
+    bbox = aerial_bbox or _DEFAULT_AERIAL_BBOX
 
     try:
-        entries, meta = _cached_orbital("stations")
+        entries, meta = _cached_orbital(orbital_group)
         if entries:
             payload["domains"]["orbital"] = entries
-            notes.append(f"🛰 Orbital EN VIVO · CelesTrak — {meta['n']} satélites (observed)")
+            notes.append(f"🛰 Orbital EN VIVO · CelesTrak grupo *{orbital_group}* — "
+                         f"{meta['n']} satélites (observed)")
     except Exception as exc:
         errors.append(f"Orbital en vivo no disponible ahora: {type(exc).__name__}: {exc}")
 
     try:
-        entries, meta = _cached_aerial(_DEFAULT_AERIAL_BBOX)
-        if entries:
-            payload["domains"]["aerial"] = entries
-            notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — {meta['n']} aeronaves (observed)")
+        entries, meta = _cached_aerial(bbox, military_only)
+        payload["domains"]["aerial"] = entries
+        if military_only:
+            notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — {meta['n_mil']} aeronaves "
+                         f"**militares** (heurística) de {meta['n_total']} en el área (observed)")
+            if not entries:
+                notes.append("Ahora mismo no hay vuelos militares detectables en el área; "
+                             "amplía el bbox o desactiva *solo militar*. Ausencia ≠ inexistencia "
+                             "(los militares apagan el ADS-B).")
+        else:
+            notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — {meta['n']} aeronaves "
+                         f"({meta['n_mil']} militares por heurística) (observed)")
     except Exception as exc:
         errors.append(f"Aéreo en vivo no disponible ahora: {type(exc).__name__}: {exc}")
 
-    notes.append("Marítimo (AIS), superficie, suborbital, instalaciones y OSINT: "
-                 "actívalos en la barra lateral (requieren tu dataset o clave de API). "
-                 "Nada en este panel es inventado.")
     return payload, notes, errors
 
 
@@ -375,9 +376,15 @@ def _domain_tables(payload: dict) -> None:
             st.dataframe([{k: r[k] for k in ("id", "name", "alt_km", "incl", "period_min", "err_km")}
                           for r in d["orbital"]], use_container_width=True, hide_index=True)
     if d["aerial"]:
-        with st.expander(f"✈ Aeronaves ({len(d['aerial'])}) · observed", expanded=False):
-            st.dataframe([{k: r[k] for k in ("id", "callsign", "lat", "lon", "alt_km", "heading", "age_s")}
+        n_mil = sum(1 for r in d["aerial"] if r.get("mil"))
+        with st.expander(f"✈ Aeronaves ({len(d['aerial'])}, {n_mil} militares) · observed",
+                         expanded=False):
+            st.dataframe([{**{k: r[k] for k in ("id", "callsign", "lat", "lon", "alt_km", "heading", "age_s")},
+                           "militar (heurística)": r.get("mil", "")}
                           for r in d["aerial"]], use_container_width=True, hide_index=True)
+            st.caption("La etiqueta «militar» es una **heurística pública** (prefijo de indicativo "
+                       "+ rango ICAO24), AFIRMADA y no verificada; la **posición** sí es observed. "
+                       "Falsos +/− posibles. Ver `docs/sources.md`.")
     if d.get("maritime"):
         with st.expander(f"⚓ Buques ({len(d['maritime'])}) · observed (AIS)", expanded=False):
             st.dataframe([{k: r[k] for k in ("id", "name", "vessel_type", "lat", "lon", "speed_kt", "age_s")}
@@ -413,12 +420,22 @@ def _domain_tables(payload: dict) -> None:
 
 
 def _page_situation() -> None:
-    cfg = _sidebar_controls()
-    if cfg["go"] or "te_payload" not in st.session_state:
-        payload, notes, errors = _build_combined(cfg)
+    live = _sidebar_live_feeds()
+    up = _upload_panel()
+    up_sig = (
+        *((k, up[k].name, up[k].size) for k in
+          ("maritime_file", "surface_file", "ballistic_file", "installations_file", "osint_file")
+          if up.get(k) is not None),
+        ("bw", up.get("bandwidth")),
+    )
+    changed = st.session_state.get("te_up_sig") != up_sig
+    if live["go"] or changed or "te_payload" not in st.session_state:
+        with st.spinner("Ingiriendo feeds en vivo y datasets…"):
+            payload, notes, errors = _build_combined(live, up)
         st.session_state["te_payload"] = payload
         st.session_state["te_notes"] = notes
         st.session_state["te_errors"] = errors
+        st.session_state["te_up_sig"] = up_sig
 
     payload = st.session_state["te_payload"]
     for e in st.session_state.get("te_errors", []):

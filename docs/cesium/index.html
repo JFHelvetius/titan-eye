@@ -407,6 +407,7 @@
                    outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(8, 0) },
           description: `<h3>${a.callsign || a.id}</h3>` + epBadge('observed') + htmlInfo([
             ['Dominio', 'Aéreo (ADS-B)'], ['ICAO24', a.id ?? '—'], ['Origen', a.origin ?? '—'],
+            ...(a.mil ? [['Militar (heurística)', a.mil + ' · clasificación AFIRMADA, no verificada']] : []),
             ['Altitud', (a.alt_km ?? 0).toFixed(1) + ' km'], ['Rumbo', (a.heading ?? 0).toFixed(0) + '°'],
             ['Vel.', (a.speed_kt ?? 0).toFixed(0) + ' kt'], ['Último msg', (a.age_s ?? 0).toFixed(0) + ' s' + (stale ? ' ⚠ antiguo' : '')],
             ['Nota', 'Posición declarada por la aeronave · sujeta a spoofing'],
