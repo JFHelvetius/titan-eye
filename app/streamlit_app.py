@@ -372,6 +372,29 @@ def _fetch_gdelt_events(intervals: int = _GDELT_EVENTS_INTERVALS, bandwidth_km: 
             {"n": len(events), "n_cells": len(pts)})
 
 
+def _aisstream_key() -> str:
+    """Lee el token de AISStream de los secrets de Streamlit o del entorno (NUNCA
+    se hardcodea). Vacío si no está configurado."""
+    import os
+    try:
+        key = st.secrets.get("AISSTREAM_API_KEY", "")  # type: ignore[attr-defined]
+    except Exception:
+        key = ""
+    return str(key or os.environ.get("AISSTREAM_API_KEY", "")).strip()
+
+
+def _fetch_aisstream(seconds: float = 8.0):
+    """Buques EN VIVO vía AISStream (requiere token gratuito en secrets)."""
+    from titan_eye.catalog.normalizers.ais import normalize_ais
+    from titan_eye.ingestion.sources.aisstream import AisStreamSource
+    from titan_eye.orchestration.globe_payload import vessels_to_entries
+
+    src = AisStreamSource(_aisstream_key())
+    art = src.fetch_snapshot(seconds=seconds)
+    vessels = normalize_ais(art)
+    return vessels_to_entries(vessels), {"hash": art.content_hash, "n": len(vessels)}
+
+
 def _fetch_osm_bases(max_elements: int = 1500):
     """Instalaciones militares mundiales EN VIVO desde OpenStreetMap (sin clave).
 
@@ -564,6 +587,12 @@ def _cached_gdelt_events(intervals: int):
     return _fetch_gdelt_events(intervals)
 
 
+@st.cache_data(ttl=120, show_spinner=False)
+def _cached_aisstream(seconds: float):
+    """Buques en vivo (AISStream) cacheados 2 min."""
+    return _fetch_aisstream(seconds)
+
+
 def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
     """'military' → el set militar agregado; lista separada por comas → esos; uno → ese."""
     spec = (spec or "military").strip()
@@ -658,6 +687,20 @@ def _default_payload(
                          f"de violencia material (últimas 2h, asserted · densidad de reportes)")
     except Exception as exc:
         errors.append(f"Eventos GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
+
+    # Marítimo AIS: solo si hay token configurado (gratis, pero requiere registro).
+    if _aisstream_key():
+        try:
+            entries, meta = _cached_aisstream(8.0)
+            if entries:
+                payload["domains"]["maritime"] = entries
+                notes.append(f"⚓ Buques EN VIVO · AISStream — **{meta['n']} buques** "
+                             f"(AIS autodeclarado · falsificable, los de guerra lo apagan)")
+        except Exception as exc:
+            errors.append(f"AISStream no disponible ahora: {type(exc).__name__}: {exc}")
+    else:
+        notes.append("⚓ Marítimo (AIS): añade tu token gratuito `AISSTREAM_API_KEY` en "
+                     "*Settings → Secrets* de Streamlit para activar los buques en vivo.")
 
     return payload, notes, errors
 

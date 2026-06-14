@@ -8,3 +8,5 @@ pydantic>=2.7,<3
 duckdb>=1.0,<2
 pyarrow>=15.0
 sgp4>=2.20,<3
+# Cliente WebSocket para la fuente AISStream (buques AIS en vivo, opcional).
+websocket-client>=1.7,<2

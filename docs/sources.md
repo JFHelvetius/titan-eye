@@ -102,6 +102,25 @@ El toggle *Solo militar* de la barra lateral oculta el tráfico civil.
   no por el lugar del suceso; se declara en cada ítem. Densidad = volumen de
   cobertura, no intensidad del conflicto (ADR-0003).
 
+### Buques en vivo · AISStream (token gratuito)
+
+- **Qué:** posiciones AIS de buques en tiempo real (capa marítima). Es la única
+  fuente del panel que **requiere registro** — pero es **gratis**, no de pago.
+- **Activación (paso a paso):**
+  1. Crea una cuenta gratis en <https://aisstream.io> y verifica el email.
+  2. En el panel de AISStream, **crea una API Key** (botón *Create API Key*) y cópiala.
+  3. En tu app de Streamlit Cloud: *Manage app → Settings → Secrets* y pega:
+     ```toml
+     AISSTREAM_API_KEY = "tu_token_aqui"
+     ```
+     (En local: variable de entorno `AISSTREAM_API_KEY`.)
+  4. *Reboot* la app. Si el token está, los buques aparecen solos; si no, el panel
+     muestra un aviso y el resto sigue funcionando.
+- **Nunca** se mete el token en el código ni en el repo (ADR de secretos).
+- **Naturaleza:** `observed` pero **autodeclarado y falsificable** (ADR-0015): los
+  buques de guerra apagan o falsean el AIS y los submarinos sumergidos no
+  transmiten. Ausencia ≠ inexistencia.
+
 ### Eventos de conflicto en vivo · GDELT 2.0 Events (sin clave)
 
 - **Qué:** eventos de **violencia material** (combate, asalto, coerción, violencia
