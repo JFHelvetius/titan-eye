@@ -156,7 +156,8 @@
   <div class="leg" id="legend">
     <div class="lt">Identificación <span class="tog" id="legToggle">ocultar</span></div>
     <div class="row"><img class="gl ic" id="legSat"> Satélite (orbital)</div>
-    <div class="row"><img class="gl ic" id="legPlane"> Aeronave — apunta al rumbo</div>
+    <div class="row"><img class="gl ic" id="legPlane"> Aeronave civil — apunta al rumbo</div>
+    <div class="row"><img class="gl ic" id="legPlaneMil"> Aeronave militar (heurística) — resaltada</div>
     <div class="row"><img class="gl ic" id="legShip"> Buque — apunta al rumbo</div>
     <div class="row"><img class="gl ic" id="legMissile"> Misil balístico (apogeo)</div>
     <div class="row"><span class="gl" style="color:var(--hostile)">▲✕</span> Lanzamiento / impacto balístico</div>
@@ -311,6 +312,7 @@
     }
     const SPRITE = {
       plane: sprite('plane', '#f0b429'),
+      planeMil: sprite('plane', '#e63946'),   // militar (heurística) — resaltado
       ship: sprite('ship', '#34d399'),
       missile: sprite('missile', '#e63946'),
       sat: sprite('sat', '#38bdf8'),
@@ -319,7 +321,8 @@
     const R = Cesium.Math.toRadians;
 
     // La leyenda usa los MISMOS sprites que el globo (identificación 1:1)
-    const _legMap = { legSat: SPRITE.sat, legPlane: SPRITE.plane, legShip: SPRITE.ship, legMissile: SPRITE.missile };
+    const _legMap = { legSat: SPRITE.sat, legPlane: SPRITE.plane, legPlaneMil: SPRITE.planeMil,
+                      legShip: SPRITE.ship, legMissile: SPRITE.missile };
     for (const id in _legMap) { const el = document.getElementById(id); if (el) el.src = _legMap[id]; }
 
     document.getElementById('hudSub').textContent = 'Esri Dark (táctico)';
@@ -395,15 +398,20 @@
         if (show('range')) addRing(o.lon, o.lat, horizonRadiusMeters(o.alt_km || 0), COL.sat);
       });
 
-      // AERIAL (observed) — icono de avión orientado por rumbo + antigüedad
+      // AERIAL (observed) — icono de avión orientado por rumbo. Militar (heurística)
+      // resaltado en rojo y etiquetado; civil en ámbar, pequeño y sin etiqueta (anti-clutter).
       if (show('aerial')) (d.aerial || []).forEach(a => {
         const stale = (a.age_s ?? 0) > 30;
+        const isMil = !!a.mil;
         const ent = viewer.entities.add({
           name: a.callsign || a.id, position: Cesium.Cartesian3.fromDegrees(a.lon, a.lat, (a.alt_km || 0) * 1000),
-          billboard: { image: SPRITE.plane, scale: stale ? .55 : .7, color: Cesium.Color.WHITE.withAlpha(stale ? .55 : 1),
+          billboard: { image: isMil ? SPRITE.planeMil : SPRITE.plane,
+                       scale: (isMil ? 0.95 : 0.5) * (stale ? 0.8 : 1),
+                       color: Cesium.Color.WHITE.withAlpha(stale ? .5 : (isMil ? 1 : .85)),
                        rotation: R(-(a.heading ?? 0)),
                        verticalOrigin: Cesium.VerticalOrigin.CENTER, disableDepthTestDistance: Number.POSITIVE_INFINITY },
-          label: { text: a.callsign || '', font: '10px JetBrains Mono, monospace', fillColor: COL.aircraft, outlineColor: Cesium.Color.BLACK,
+          label: { text: isMil ? (a.callsign || '') : '', font: '10px JetBrains Mono, monospace',
+                   fillColor: COL.hostile, outlineColor: Cesium.Color.BLACK,
                    outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(8, 0) },
           description: `<h3>${a.callsign || a.id}</h3>` + epBadge('observed') + htmlInfo([
             ['Dominio', 'Aéreo (ADS-B)'], ['ICAO24', a.id ?? '—'], ['Origen', a.origin ?? '—'],

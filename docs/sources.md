@@ -77,8 +77,16 @@ positivos (un civil con indicativo coincidente) y falsos negativos (un militar c
 indicativo neutro o el ADS-B apagado). Desactiva *Solo militar* en la barra lateral
 para ver todo el tráfico, o amplía el bbox si no aparece nada.
 
-Para satélites, el panel usa por defecto el grupo **`military`** de CelesTrak (no
-`stations`), que es realmente la lista de satélites militares.
+Para satélites, el panel **agrega varios grupos militares/de doble uso** de
+CelesTrak (no `stations`): `military`, `gps-ops` (GPS), `glo-ops` (GLONASS),
+`beidou`, `galileo`, `sbas`, `radar`, `nnss`, `musson`. Se deduplican por NORAD y
+da ~200+ satélites reales (validado). Si un grupo no responde, se salta y se sigue
+con el resto (el transporte reintenta con backoff y se identifica con User-Agent,
+lo que evita los *timeouts* de CelesTrak ante clientes anónimos).
+
+Por defecto el aéreo muestra **todo el tráfico** del bbox con los militares
+**resaltados en rojo** (anti-saturación: los civiles van pequeños y sin etiqueta).
+El toggle *Solo militar* de la barra lateral oculta el tráfico civil.
 
 ---
 

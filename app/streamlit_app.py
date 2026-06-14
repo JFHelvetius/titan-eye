@@ -142,6 +142,21 @@ def _fetch_aerial(bbox, *, military_only: bool = True):
                   "n_mil": mil, "military_only": military_only, "note": art.license_note}
 
 
+# Grupos CelesTrak militares / de doble uso (operados por fuerzas armadas).
+# Se agregan para dar volumen real manteniendo el foco militar.
+_MIL_SAT_GROUPS: tuple[str, ...] = (
+    "military",   # satélites militares varios
+    "gps-ops",    # GPS — operado por la USAF/USSF (doble uso)
+    "glo-ops",    # GLONASS — Fuerzas Aeroespaciales rusas
+    "beidou",     # BeiDou — China (PLA)
+    "galileo",    # Galileo — UE
+    "sbas",       # aumentación (WAAS/EGNOS…)
+    "radar",      # calibración radar / observación
+    "nnss",       # Navy Navigation Satellite System (US Navy)
+    "musson",     # navegación militar rusa (Parus/Tsikada)
+)
+
+
 def _fetch_orbital(group):
     from titan_eye.catalog.normalizers.tle import normalize_tles
     from titan_eye.ingestion.sources.celestrak import CelesTrakSource
@@ -153,6 +168,32 @@ def _fetch_orbital(group):
     elements = normalize_tles(art)
     return orbital_elements_to_entries(elements), {"hash": art.content_hash, "n": len(elements),
                                                    "note": art.license_note}
+
+
+def _fetch_orbital_multi(groups):
+    """Agrega varios grupos CelesTrak en una sola capa orbital, deduplicando por
+    NORAD. Resiliente: si un grupo falla, se salta y se sigue con el resto."""
+    from titan_eye.catalog.normalizers.tle import normalize_tles
+    from titan_eye.ingestion.sources.celestrak import CelesTrakSource
+    from titan_eye.ingestion.transport import UrllibTransport
+    from titan_eye.orchestration.globe_payload import orbital_elements_to_entries
+
+    src = CelesTrakSource(transport=UrllibTransport())
+    seen: set[int] = set()
+    elements = []
+    ok_groups, failed = [], []
+    for g in groups:
+        try:
+            art = src.fetch_group(g)
+            for el in normalize_tles(art):
+                if el.norad_cat_id not in seen:
+                    seen.add(el.norad_cat_id)
+                    elements.append(el)
+            ok_groups.append(g)
+        except Exception:  # un grupo caído no debe tumbar la capa
+            failed.append(g)
+    entries = orbital_elements_to_entries(elements)
+    return entries, {"n": len(entries), "groups_ok": ok_groups, "groups_failed": failed}
 
 
 def _fetch_surface(raw: bytes, bandwidth_km: float):
@@ -204,11 +245,13 @@ def _sidebar_live_feeds() -> dict:
     st.sidebar.caption("El panel ya carga satélites y aeronaves **militares** en vivo. "
                        "Estos ajustes son opcionales.")
     cfg: dict = {}
-    cfg["military_only"] = st.sidebar.toggle("Solo militar (heurística)", value=True,
-        help="Filtra aeronaves por indicativo + rango ICAO24. Apágalo para ver todo el tráfico.")
+    cfg["military_only"] = st.sidebar.toggle("Solo militar (oculta el tráfico civil)", value=False,
+        help="Por defecto se muestra TODO el tráfico con los militares resaltados. "
+             "Actívalo para ver únicamente las aeronaves militares (heurística).")
     cfg["orbital_group"] = st.sidebar.text_input(
-        "Grupo orbital (CelesTrak)", value="military",
-        help="p. ej. military, active, stations, visual")
+        "Grupos orbitales (CelesTrak)", value="military",
+        help="'military' = set militar/doble-uso agregado (GPS, GLONASS, BeiDou, Galileo…). "
+             "O escribe grupos separados por comas, p. ej. 'active' o 'stations,visual'.")
     cfg["aerial_bbox"] = st.sidebar.text_input(
         "bbox aéreo (lat_min,lat_max,lon_min,lon_max)", value="25,70,-12,60")
     cfg["go"] = st.sidebar.button("⟳ Recargar feeds en vivo", use_container_width=True)
@@ -240,7 +283,7 @@ def _build_combined(live: dict, up: dict) -> tuple[dict, list[str], list[str]]:
     payload, notes, errors = _default_payload(
         orbital_group=(live.get("orbital_group") or "military").strip(),
         aerial_bbox=_parse_bbox(live.get("aerial_bbox")),
-        military_only=live.get("military_only", True),
+        military_only=live.get("military_only", False),
     )
 
     if up.get("maritime_file") is not None:
@@ -299,35 +342,56 @@ def _cached_orbital(group: str):
     return _fetch_orbital(group)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_orbital_multi(groups: tuple):
+    """Capa orbital agregada de varios grupos militares (cacheada 10 min)."""
+    return _fetch_orbital_multi(groups)
+
+
 @st.cache_data(ttl=120, show_spinner=False)
 def _cached_aerial(bbox: tuple, military_only: bool = True):
     """Aeronaves en vivo (OpenSky/ADS-B) cacheadas 2 min (límite de la API pública)."""
     return _fetch_aerial(bbox, military_only=military_only)
 
 
+def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
+    """'military' → el set militar agregado; lista separada por comas → esos; uno → ese."""
+    spec = (spec or "military").strip()
+    if spec.lower() in ("military", "mil", ""):
+        return _MIL_SAT_GROUPS
+    return tuple(g.strip() for g in spec.split(",") if g.strip())
+
+
 def _default_payload(
     *, orbital_group: str = "military", aerial_bbox: tuple | None = None,
-    military_only: bool = True,
+    military_only: bool = False,
 ) -> tuple[dict, list[str], list[str]]:
-    """Vista base con SOLO datos reales EN VIVO de fuentes públicas sin clave,
-    por defecto FILTRADOS a lo militar (que es el foco).
+    """Vista base con SOLO datos reales EN VIVO de fuentes públicas sin clave.
 
-    - Orbital: grupo `military` de CelesTrak (satélites militares) → SGP4.
-    - Aéreo: aeronaves reales vía OpenSky (ADS-B) clasificadas como militares por
-      heurística pública (indicativo + rango ICAO24).
+    - Orbital: agrega varios grupos militares/de doble uso de CelesTrak (GPS,
+      GLONASS, BeiDou, Galileo, military…) → SGP4. Mucho volumen, foco militar.
+    - Aéreo: TODO el tráfico OpenSky (ADS-B) del área, con las aeronaves militares
+      resaltadas por heurística pública. `military_only` lo reduce a solo militares.
     Los dominios que requieren clave de API (AIS marítimo) o un dataset público
-    (eventos, reportes balísticos, instalaciones, OSINT) se añaden subiéndolos."""
+    se añaden subiéndolos."""
     payload = _empty_payload()
     notes: list[str] = []
     errors: list[str] = []
     bbox = aerial_bbox or _DEFAULT_AERIAL_BBOX
 
+    groups = _resolve_orbital_groups(orbital_group)
     try:
-        entries, meta = _cached_orbital(orbital_group)
+        entries, meta = _cached_orbital_multi(groups)
         if entries:
             payload["domains"]["orbital"] = entries
-            notes.append(f"🛰 Orbital EN VIVO · CelesTrak grupo *{orbital_group}* — "
-                         f"{meta['n']} satélites (observed)")
+            note = (f"🛰 Orbital EN VIVO · CelesTrak — **{meta['n']} satélites** "
+                    f"militares/doble-uso de {len(meta['groups_ok'])} grupos (observed)")
+            if meta["groups_failed"]:
+                note += f" · grupos no disponibles ahora: {', '.join(meta['groups_failed'])}"
+            notes.append(note)
+        else:
+            errors.append("Orbital: ningún grupo respondió (red CelesTrak caída ahora mismo). "
+                          "Se reintenta solo al recargar.")
     except Exception as exc:
         errors.append(f"Orbital en vivo no disponible ahora: {type(exc).__name__}: {exc}")
 
@@ -338,12 +402,12 @@ def _default_payload(
             notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — {meta['n_mil']} aeronaves "
                          f"**militares** (heurística) de {meta['n_total']} en el área (observed)")
             if not entries:
-                notes.append("Ahora mismo no hay vuelos militares detectables en el área; "
-                             "amplía el bbox o desactiva *solo militar*. Ausencia ≠ inexistencia "
-                             "(los militares apagan el ADS-B).")
+                notes.append("Ahora mismo no hay vuelos militares detectables; amplía el bbox o "
+                             "desactiva *Solo militar* para ver todo el tráfico. Ausencia ≠ "
+                             "inexistencia (los militares apagan el ADS-B).")
         else:
-            notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — {meta['n']} aeronaves "
-                         f"({meta['n_mil']} militares por heurística) (observed)")
+            notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — **{meta['n']} aeronaves** "
+                         f"({meta['n_mil']} **militares** resaltadas, heurística) (observed)")
     except Exception as exc:
         errors.append(f"Aéreo en vivo no disponible ahora: {type(exc).__name__}: {exc}")
 
