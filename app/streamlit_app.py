@@ -153,7 +153,6 @@ _MIL_SAT_GROUPS: tuple[str, ...] = (
     "sbas",       # aumentación (WAAS/EGNOS…)
     "radar",      # calibración radar / observación
     "nnss",       # Navy Navigation Satellite System (US Navy)
-    "musson",     # navegación militar rusa (Parus/Tsikada)
 )
 
 # Misión declarada por el grupo de origen de CelesTrak (clasificación honesta:
@@ -325,7 +324,7 @@ def _load_bundled_bases():
     return installations_to_entries(items), {"hash": art.content_hash, "n": len(items)}
 
 
-_GDELT_EVENTS_INTERVALS = 8     # 8 × 15 min = últimas 2 h de eventos
+_GDELT_EVENTS_INTERVALS = 4     # 4 × 15 min = última hora de eventos (más rápido)
 _MAX_CONFLICT_EVENTS = 2500
 
 
@@ -691,7 +690,7 @@ def _default_payload(
     # Marítimo AIS: solo si hay token configurado (gratis, pero requiere registro).
     if _aisstream_key():
         try:
-            entries, meta = _cached_aisstream(8.0)
+            entries, meta = _cached_aisstream(6.0)
             if entries:
                 payload["domains"]["maritime"] = entries
                 notes.append(f"⚓ Buques EN VIVO · AISStream — **{meta['n']} buques** "

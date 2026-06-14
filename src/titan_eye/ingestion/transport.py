@@ -22,8 +22,9 @@ from titan_eye.core.errors import TransportError
 _DEFAULT_USER_AGENT = (
     "TitanEye/0.1 (+https://github.com/JFHelvetius/titan-eye) public-data fetcher"
 )
-# Timeout más generoso por defecto: CelesTrak puede tardar varios segundos.
-_DEFAULT_TIMEOUT = 45.0
+# Timeout por defecto: si un endpoint público no responde en ~18s está caído;
+# mejor rendirse rápido y seguir con el resto que colgar el panel.
+_DEFAULT_TIMEOUT = 18.0
 # Reintentos con backoff ante fallos transitorios de red.
 _DEFAULT_RETRIES = 3
 
