@@ -245,15 +245,16 @@ def _sidebar_live_feeds() -> dict:
     st.sidebar.caption("El panel ya carga satélites y aeronaves **militares** en vivo. "
                        "Estos ajustes son opcionales.")
     cfg: dict = {}
-    cfg["military_only"] = st.sidebar.toggle("Solo militar (oculta el tráfico civil)", value=False,
-        help="Por defecto se muestra TODO el tráfico con los militares resaltados. "
-             "Actívalo para ver únicamente las aeronaves militares (heurística).")
+    cfg["military_only"] = st.sidebar.toggle("Solo militar (oculta el tráfico civil)", value=True,
+        help="Activado: solo aeronaves militares (heurística indicativo + ICAO24). "
+             "Desactívalo para ver TODO el tráfico con los militares resaltados en rojo.")
     cfg["orbital_group"] = st.sidebar.text_input(
         "Grupos orbitales (CelesTrak)", value="military",
         help="'military' = set militar/doble-uso agregado (GPS, GLONASS, BeiDou, Galileo…). "
              "O escribe grupos separados por comas, p. ej. 'active' o 'stations,visual'.")
     cfg["aerial_bbox"] = st.sidebar.text_input(
-        "bbox aéreo (lat_min,lat_max,lon_min,lon_max)", value="25,70,-12,60")
+        "Área aérea — vacío = GLOBAL, o lat_min,lat_max,lon_min,lon_max", value="",
+        help="Por defecto cubre TODO el planeta. Acota con un bbox si quieres una región.")
     cfg["go"] = st.sidebar.button("⟳ Recargar feeds en vivo", use_container_width=True)
     return cfg
 
@@ -283,7 +284,7 @@ def _build_combined(live: dict, up: dict) -> tuple[dict, list[str], list[str]]:
     payload, notes, errors = _default_payload(
         orbital_group=(live.get("orbital_group") or "military").strip(),
         aerial_bbox=_parse_bbox(live.get("aerial_bbox")),
-        military_only=live.get("military_only", False),
+        military_only=live.get("military_only", True),
     )
 
     if up.get("maritime_file") is not None:
@@ -331,9 +332,9 @@ def _build_combined(live: dict, up: dict) -> tuple[dict, list[str], list[str]]:
     return payload, notes, errors
 
 
-# bbox aéreo por defecto: Europa + Mediterráneo + Próximo Oriente (zona densa y
-# de relevancia). (lat_min, lat_max, lon_min, lon_max).
-_DEFAULT_AERIAL_BBOX = (25.0, 70.0, -12.0, 60.0)
+# Área aérea por defecto: GLOBAL (None → OpenSky devuelve todos los estados del
+# mundo). El foco militar lo da el filtro, no la geografía.
+_DEFAULT_AERIAL_BBOX = None
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -364,7 +365,7 @@ def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
 
 def _default_payload(
     *, orbital_group: str = "military", aerial_bbox: tuple | None = None,
-    military_only: bool = False,
+    military_only: bool = True,
 ) -> tuple[dict, list[str], list[str]]:
     """Vista base con SOLO datos reales EN VIVO de fuentes públicas sin clave.
 
@@ -398,13 +399,14 @@ def _default_payload(
     try:
         entries, meta = _cached_aerial(bbox, military_only)
         payload["domains"]["aerial"] = entries
+        scope = "en el mundo" if not bbox else "en el área"
         if military_only:
             notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — {meta['n_mil']} aeronaves "
-                         f"**militares** (heurística) de {meta['n_total']} en el área (observed)")
+                         f"**militares** (heurística) de {meta['n_total']} {scope} (observed)")
             if not entries:
-                notes.append("Ahora mismo no hay vuelos militares detectables; amplía el bbox o "
-                             "desactiva *Solo militar* para ver todo el tráfico. Ausencia ≠ "
-                             "inexistencia (los militares apagan el ADS-B).")
+                notes.append("Ahora mismo no hay vuelos militares detectables; desactiva *Solo "
+                             "militar* para ver todo el tráfico. Ausencia ≠ inexistencia (los "
+                             "militares apagan el ADS-B).")
         else:
             notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — **{meta['n']} aeronaves** "
                          f"({meta['n_mil']} **militares** resaltadas, heurística) (observed)")
@@ -486,20 +488,23 @@ def _domain_tables(payload: dict) -> None:
 def _page_situation() -> None:
     live = _sidebar_live_feeds()
     up = _upload_panel()
-    up_sig = (
+    # Firma de estado: cualquier cambio en feeds en vivo (incl. toggle militar) o en
+    # los datasets subidos dispara una reconstrucción automática (sin pulsar botón).
+    sig = (
+        ("mil", live["military_only"]), ("grp", live["orbital_group"]), ("bbox", live["aerial_bbox"]),
         *((k, up[k].name, up[k].size) for k in
           ("maritime_file", "surface_file", "ballistic_file", "installations_file", "osint_file")
           if up.get(k) is not None),
         ("bw", up.get("bandwidth")),
     )
-    changed = st.session_state.get("te_up_sig") != up_sig
+    changed = st.session_state.get("te_sig") != sig
     if live["go"] or changed or "te_payload" not in st.session_state:
         with st.spinner("Ingiriendo feeds en vivo y datasets…"):
             payload, notes, errors = _build_combined(live, up)
         st.session_state["te_payload"] = payload
         st.session_state["te_notes"] = notes
         st.session_state["te_errors"] = errors
-        st.session_state["te_up_sig"] = up_sig
+        st.session_state["te_sig"] = sig
 
     payload = st.session_state["te_payload"]
     for e in st.session_state.get("te_errors", []):
