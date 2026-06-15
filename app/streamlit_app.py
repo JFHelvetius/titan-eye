@@ -669,7 +669,7 @@ def _resolve_orbital_groups(spec: str) -> tuple[str, ...]:
 # Presupuesto de tiempo total para los feeds en vivo. Un feed que no responda en
 # este margen se marca como no disponible (aviso no fatal) y el panel sigue; su
 # descarga termina en segundo plano y queda cacheada para la próxima carga.
-_FEEDS_BUDGET_S = 14.0
+_FEEDS_BUDGET_S = 20.0
 
 
 def _run_parallel(jobs: dict) -> dict:

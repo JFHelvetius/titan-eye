@@ -86,11 +86,12 @@ class OpenSkySource:
                      "User-Agent": "TitanEye/0.1 (+github.com/JFHelvetius/titan-eye)"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with urllib.request.urlopen(req, timeout=12) as resp:
                 doc = json.loads(resp.read())
         except Exception as exc:  # se traduce a un error de transporte claro
             raise TransportError(
-                f"OpenSky: no se pudo obtener token OAuth2 (¿credenciales válidas?): {exc}"
+                "OpenSky: no se pudo obtener token OAuth2 (¿credenciales válidas?): "
+                f"{type(exc).__name__}: {exc}"
             ) from exc
         self._token = str(doc.get("access_token", ""))
         self._token_expiry = time.time() + float(doc.get("expires_in", 1800))
