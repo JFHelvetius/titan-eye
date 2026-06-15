@@ -216,7 +216,6 @@ def _fetch_orbital_multi(groups):
     from titan_eye.catalog.normalizers.tle import normalize_tles
     from titan_eye.ingestion.sources.celestrak import CelesTrakSource
     from titan_eye.ingestion.transport import UrllibTransport
-    from titan_eye.orchestration.globe_payload import orbital_elements_to_entries
 
     # 2 reintentos por grupo; descarga concurrente (máx 4 a la vez para no
     # disparar el rate-limit de CelesTrak) → mucho más rápido que secuencial.
@@ -251,13 +250,28 @@ def _fetch_orbital_multi(groups):
             failed.append(g)
             last_err = f"{type(exc).__name__}: {exc}"
 
-    elements = elements[:_MAX_SATS]
-    # Groundtrack solo para los primeros (caro); el resto, posición puntual.
+    entries, by_mission = _build_orbital_entries(elements[:_MAX_SATS], norad_group)
+    meta = {"n": len(entries), "groups_ok": ok_groups, "groups_failed": failed,
+            "by_mission": by_mission}
+    if not entries:
+        # No cachear un resultado vacío: que el siguiente rerun reintente.
+        raise RuntimeError(
+            "CelesTrak no devolvió satélites en ningún grupo "
+            f"({last_err or 'sin detalle'}). Pulsa «Recargar feeds en vivo» en unos segundos.")
+    return entries, meta
+
+
+def _build_orbital_entries(elements, norad_group):
+    """elements + mapa NORAD→grupo -> (entradas del globo, conteo por misión).
+
+    Propaga groundtracks solo para los primeros (lo caro) y etiqueta misión (del
+    grupo de origen) + régimen orbital (física). Compartido por la vía en vivo y
+    por el snapshot bundleado."""
+    from titan_eye.orchestration.globe_payload import orbital_elements_to_entries
+
     with_t = orbital_elements_to_entries(elements[:_TRACKS_FOR_FIRST], with_tracks=True)
     no_t = orbital_elements_to_entries(elements[_TRACKS_FOR_FIRST:], with_tracks=False)
     entries = with_t + no_t
-    # Clasificación militar honesta: misión = la del grupo de origen; régimen =
-    # física pública. Sirven como ejes de filtro (kind) y para el popup del globo.
     by_mission: dict[str, int] = {}
     for e in entries:
         g = norad_group.get(e["id"], "")
@@ -267,14 +281,43 @@ def _fetch_orbital_multi(groups):
         e["regime"] = _orbit_regime(e.get("alt_km", 0.0), e.get("ecc", 0.0))
         e["kind"] = mission          # eje de filtro por misión
         by_mission[mission] = by_mission.get(mission, 0) + 1
-    meta = {"n": len(entries), "groups_ok": ok_groups, "groups_failed": failed,
-            "by_mission": by_mission}
-    if not entries:
-        # No cachear un resultado vacío: que el siguiente rerun reintente.
-        raise RuntimeError(
-            "CelesTrak no devolvió satélites en ningún grupo "
-            f"({last_err or 'sin detalle'}). Pulsa «Recargar feeds en vivo» en unos segundos.")
-    return entries, meta
+    return entries, by_mission
+
+
+_ORBITAL_SNAPSHOT = _ROOT / "samples" / "orbital_military_tles.json"
+
+
+def _load_bundled_orbital():
+    """Carga el snapshot de TLEs militares bundleado (instantáneo, sin red) y los
+    propaga con SGP4. Dato REAL de CelesTrak capturado; el error SGP4 crece con la
+    antigüedad del TLE (declarado, P2). La vía en vivo queda como refresco."""
+    import json
+
+    from titan_eye.catalog.normalizers.tle import normalize_tles
+    from titan_eye.core.domains import Domain
+    from titan_eye.core.epistemics import EpistemicLabel
+    from titan_eye.ingestion.artifact import RawArtifact
+
+    doc = json.loads(_ORBITAL_SNAPSHOT.read_text(encoding="utf-8"))
+    groups = doc.get("groups", {})
+    seen: set[int] = set()
+    elements = []
+    norad_group: dict[int, str] = {}
+    for g, text in groups.items():
+        art = RawArtifact.seal(
+            source_id="celestrak.snapshot", domain=Domain.ORBITAL,
+            request_url=f"file://samples/orbital_military_tles.json#{g}",
+            fetched_at=datetime.now(UTC), payload=text.encode("ascii"),
+            epistemic_label=EpistemicLabel.OBSERVED,
+        )
+        for el in normalize_tles(art):
+            if el.norad_cat_id not in seen:
+                seen.add(el.norad_cat_id)
+                elements.append(el)
+                norad_group[el.norad_cat_id] = g
+    entries, by_mission = _build_orbital_entries(elements, norad_group)
+    return entries, {"n": len(entries), "groups_ok": list(groups), "groups_failed": [],
+                     "by_mission": by_mission, "snapshot": doc.get("fetched_at", "")}
 
 
 def _fetch_surface(raw: bytes, bandwidth_km: float):
@@ -557,6 +600,12 @@ def _cached_orbital_multi(groups: tuple):
     return _fetch_orbital_multi(groups)
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def _cached_bundled_orbital():
+    """Snapshot bundleado de TLEs militares (instantáneo, sin red, cacheado 24h)."""
+    return _load_bundled_orbital()
+
+
 @st.cache_data(ttl=120, show_spinner=False)
 def _cached_aerial(bbox: tuple, military_only: bool = True):
     """Aeronaves en vivo (OpenSky/ADS-B) cacheadas 2 min (límite de la API pública)."""
@@ -668,10 +717,14 @@ def _default_payload(
     errors: list[str] = []
     bbox = aerial_bbox or _DEFAULT_AERIAL_BBOX
     groups = _resolve_orbital_groups(orbital_group)
+    is_default_orbital = groups == _MIL_SAT_GROUPS
     has_ais = bool(_aisstream_key())
 
     jobs = {
-        "orbital": (_cached_orbital_multi, (groups,)),
+        # Orbital por defecto = snapshot bundleado (instantáneo, fiable). Si el
+        # usuario pide grupos distintos, se va a CelesTrak en vivo.
+        "orbital": (_cached_bundled_orbital, ()) if is_default_orbital
+        else (_cached_orbital_multi, (groups,)),
         "aerial": (_cached_aerial, (bbox, military_only)),
         "news": (_cached_gdelt_news, (DEFAULT_QUERY,)),
         "bases": (_cached_bundled_bases, ()),
@@ -684,25 +737,26 @@ def _default_payload(
     # ── Orbital ──
     val, exc = res["orbital"]
     if exc is not None:
-        errors.append(f"Orbital en vivo no disponible ahora: {type(exc).__name__}: {exc}")
+        notes.append("🛰 Satélites: el proveedor tardó en responder; recarga en unos "
+                     "segundos (se rellena solo).")
     else:
         entries, meta = val
         if entries:
             payload["domains"]["orbital"] = entries
-            note = (f"🛰 Orbital EN VIVO · CelesTrak — **{meta['n']} satélites** "
+            origen = "snapshot" if is_default_orbital else "EN VIVO · CelesTrak"
+            note = (f"🛰 Orbital ({origen}) — **{meta['n']} satélites** "
                     f"militares/doble-uso de {len(meta['groups_ok'])} grupos (observed)")
             bm = meta.get("by_mission") or {}
             if bm:
                 top = sorted(bm.items(), key=lambda kv: -kv[1])[:4]
                 note += " · " + ", ".join(f"{m.split(' · ')[0].split(' (')[0]}: {n}" for m, n in top)
-            if meta["groups_failed"]:
-                note += f" · grupos no disponibles ahora: {', '.join(meta['groups_failed'])}"
             notes.append(note)
 
     # ── Aéreo ──
     val, exc = res["aerial"]
     if exc is not None:
-        errors.append(f"Aéreo en vivo no disponible ahora: {type(exc).__name__}: {exc}")
+        notes.append("✈ Aéreo: OpenSky tardó en responder (limita la IP compartida del "
+                     "servidor); recarga en unos segundos.")
     else:
         entries, meta = val
         payload["domains"]["aerial"] = entries
@@ -721,7 +775,8 @@ def _default_payload(
     # ── Noticias GDELT ──
     val, exc = res["news"]
     if exc is not None:
-        errors.append(f"Noticias GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
+        notes.append("✎ Noticias (GDELT): el proveedor limita la IP del servidor; "
+                     "recarga en unos segundos. Los eventos de conflicto sí están abajo.")
     elif val[0]:
         payload["osint"] = val[0]
         payload["layers"]["osint"] = True
@@ -731,7 +786,7 @@ def _default_payload(
     # ── Bases OSM (snapshot bundleado) ──
     val, exc = res["bases"]
     if exc is not None:
-        errors.append(f"Bases OSM no disponibles ahora: {type(exc).__name__}: {exc}")
+        notes.append("🏛 Bases: no se pudo cargar el snapshot de OSM ahora mismo.")
     elif val[0]:
         payload["installations"] = val[0]
         payload["layers"]["installations"] = True
@@ -741,7 +796,7 @@ def _default_payload(
     # ── Eventos de conflicto GDELT ──
     val, exc = res["events"]
     if exc is not None:
-        errors.append(f"Eventos GDELT no disponibles ahora: {type(exc).__name__}: {exc}")
+        notes.append("🔥 Conflicto (GDELT Events): tardó en responder; recarga en unos segundos.")
     else:
         entries, hm_pts, meta = val
         if entries:
@@ -755,7 +810,7 @@ def _default_payload(
     if has_ais:
         val, exc = res["ais"]
         if exc is not None:
-            errors.append(f"AISStream no disponible ahora: {type(exc).__name__}: {exc}")
+            notes.append("⚓ Buques (AIS): el stream tardó en responder; recarga en unos segundos.")
         elif val[0]:
             payload["domains"]["maritime"] = val[0]
             notes.append(f"⚓ Buques EN VIVO · AISStream — **{val[1]['n']} buques** "

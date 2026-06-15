@@ -77,12 +77,15 @@ positivos (un civil con indicativo coincidente) y falsos negativos (un militar c
 indicativo neutro o el ADS-B apagado). Desactiva *Solo militar* en la barra lateral
 para ver todo el tráfico, o amplía el bbox si no aparece nada.
 
-Para satélites, el panel **agrega varios grupos militares/de doble uso** de
-CelesTrak (no `stations`): `military`, `gps-ops` (GPS), `glo-ops` (GLONASS),
-`beidou`, `galileo`, `sbas`, `radar`, `nnss`, `musson`. Se deduplican por NORAD y
-da ~200+ satélites reales (validado). Si un grupo no responde, se salta y se sigue
-con el resto (el transporte reintenta con backoff y se identifica con User-Agent,
-lo que evita los *timeouts* de CelesTrak ante clientes anónimos).
+Para satélites, el panel usa por defecto un **snapshot bundleado** de TLEs
+militares/doble-uso (`samples/orbital_military_tles.json`, ~200 satélites reales de
+CelesTrak capturados de los grupos `military`, `gps-ops`, `glo-ops`, `beidou`,
+`galileo`, `sbas`, `radar`). Se carga **instantáneo y sin red** (~0,1 s) y se
+propaga con SGP4; el error declarado crece con la antigüedad del TLE (P2). Así los
+satélites aparecen **siempre**, sin depender de que CelesTrak responda en cada
+carga (la IP compartida de Streamlit Cloud sufre *throttling*). Para datos en vivo,
+escribe otro grupo (p. ej. `active`) en el campo de grupos: entonces va a CelesTrak
+en directo (agrega grupos en paralelo, deduplica por NORAD, salta los que fallen).
 
 Por defecto el aéreo muestra **todo el tráfico** del bbox con los militares
 **resaltados en rojo** (anti-saturación: los civiles van pequeños y sin etiqueta).
