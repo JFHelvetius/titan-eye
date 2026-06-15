@@ -60,6 +60,22 @@ respetar los límites de cada API.
   *spoofable*. Los vuelos militares a menudo apagan o falsean el transpondedor.
   Ausencia ≠ inexistencia.
 
+#### Credenciales OpenSky (cuenta gratuita, recomendado)
+
+OpenSky **anónimo** limita por IP, y en hosts de IP compartida (Streamlit Cloud)
+ese cupo se agota → las aeronaves salen a cero a ratos. Con una **cuenta gratuita**
+el límite sube mucho:
+
+1. Regístrate en <https://opensky-network.org> (gratis) y verifica el email.
+2. En tu perfil → *API Client* → **crea un client** y copia `client_id` y
+   `client_secret` (OAuth2 client credentials).
+3. En Streamlit Cloud: *Manage app → Settings → Secrets* y pega:
+   ```toml
+   OPENSKY_CLIENT_ID = "tu_client_id"
+   OPENSKY_CLIENT_SECRET = "tu_client_secret"
+   ```
+4. *Reboot*. Si no las pones, sigue funcionando en anónimo (intermitente).
+
 #### Filtro «solo militar» (heurística, activado por defecto)
 
 El foco de Titan Eye es lo militar, así que el panel **filtra el tráfico aéreo a
@@ -143,6 +159,18 @@ El toggle *Solo militar* de la barra lateral oculta el tráfico civil.
   (ADR-0003); las víctimas nunca son peso del mapa. El halo del globo refleja la
   resolución de geolocalización declarada (país/región/ciudad), nunca un punto
   nítido sobre una posición aproximada (P2).
+
+### Trayectorias balísticas · reporte que tú aportas (no hay feed en vivo)
+
+**No existe API pública en tiempo real de trayectorias de misiles**, así que el
+dominio suborbital no se "indexa" solo: tú subes un **reporte balístico** (JSON)
+compuesto desde una fuente pública (NOTAM, aviso a la navegación, comunicado,
+prensa) y Titan Eye **reconstruye** la trayectoria con física Kepleriana de vacío y
+su **banda de incertidumbre** (NO es un track de sensor). Plantilla con todos los
+campos en `samples/ballistic_report_example.json`. Campos requeridos: `event_id`,
+`launch_lat`, `launch_lon`, `impact_lat`, `impact_lon`, `apogee_km`. Opcionales:
+`apogee_sigma_km`, `geoloc_sigma_km`, `event_time`, `source`, `source_url`.
+Etiqueta `asserted`→`inferred` (ADR-0011). Súbelo en *📤 Sube tu dataset → 🚀*.
 
 ### Bases militares · OpenStreetMap / Overpass (sin clave)
 

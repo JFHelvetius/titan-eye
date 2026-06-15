@@ -122,7 +122,8 @@ def _fetch_aerial(bbox, *, military_only: bool = True):
     from titan_eye.ingestion.transport import UrllibTransport
     from titan_eye.orchestration.globe_payload import aerial_states_to_entries
 
-    src = OpenSkySource(transport=UrllibTransport())
+    cid, csec = _opensky_creds()
+    src = OpenSkySource(transport=UrllibTransport(), client_id=cid, client_secret=csec)
     art = src.fetch_states(bbox=bbox)
     states = normalize_states(art)
     n_total = len(states)
@@ -411,6 +412,21 @@ def _fetch_gdelt_events(intervals: int = _GDELT_EVENTS_INTERVALS, bandwidth_km: 
             pts = []
     return (conflict_events_to_entries(events), pts,
             {"n": len(events), "n_cells": len(pts)})
+
+
+def _opensky_creds() -> tuple[str, str]:
+    """Lee las credenciales OAuth2 de OpenSky de secrets/entorno (cuenta gratuita).
+    Vacías si no están: entonces se usa el acceso anónimo (limitado por IP)."""
+    import os
+
+    def _get(k: str) -> str:
+        try:
+            v = st.secrets.get(k, "")  # type: ignore[attr-defined]
+        except Exception:
+            v = ""
+        return str(v or os.environ.get(k, "")).strip()
+
+    return _get("OPENSKY_CLIENT_ID"), _get("OPENSKY_CLIENT_SECRET")
 
 
 def _aisstream_key() -> str:

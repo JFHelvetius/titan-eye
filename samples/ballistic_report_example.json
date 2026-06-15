@@ -1,0 +1,29 @@
+{
+  "_nota": "PLANTILLA ILUSTRATIVA. Sustituye los valores por los de un reporte PÚBLICO real (NOTAM, aviso de navegación, comunicado oficial, prensa). Titan Eye reconstruye la trayectoria con física Kepleriana y su banda de incertidumbre; NO es un track de sensor. Campos con _ son comentarios y se ignoran.",
+  "event_id": "EJEMPLO-2026-001",
+  "_event_id": "identificador único del evento (texto)",
+
+  "launch_lat": 39.8,
+  "launch_lon": 127.5,
+  "_launch": "lat/lon del punto de lanzamiento declarado (grados)",
+
+  "impact_lat": 41.2,
+  "impact_lon": 139.9,
+  "_impact": "lat/lon del punto de impacto/caída declarado (grados)",
+
+  "apogee_km": 2000.0,
+  "_apogee_km": "altitud máxima (apogeo) declarada, en km",
+
+  "apogee_sigma_km": 150.0,
+  "_apogee_sigma_km": "incertidumbre 1-sigma del apogeo en km (opcional; 0 si no se da)",
+
+  "geoloc_sigma_km": 30.0,
+  "_geoloc_sigma_km": "incertidumbre de la geolocalización en km (opcional)",
+
+  "event_time": "2026-06-14T03:20:00Z",
+  "_event_time": "instante ISO-8601 UTC (opcional)",
+
+  "source": "Ejemplo: NOTAM A1234/26",
+  "source_url": "https://ejemplo.publico/aviso",
+  "_source": "de dónde sale la afirmación (obligatorio en la práctica para la procedencia)"
+}
