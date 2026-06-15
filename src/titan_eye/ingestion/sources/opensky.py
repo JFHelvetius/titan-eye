@@ -86,7 +86,7 @@ class OpenSkySource:
                      "User-Agent": "TitanEye/0.1 (+github.com/JFHelvetius/titan-eye)"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 doc = json.loads(resp.read())
         except Exception as exc:  # se traduce a un error de transporte claro
             raise TransportError(

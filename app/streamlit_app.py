@@ -735,6 +735,8 @@ def _default_payload(
     groups = _resolve_orbital_groups(orbital_group)
     is_default_orbital = groups == _MIL_SAT_GROUPS
     has_ais = bool(_aisstream_key())
+    _ocid, _ocsec = _opensky_creds()
+    has_osky = bool(_ocid and _ocsec)
 
     jobs = {
         # Orbital por defecto = snapshot bundleado (instantáneo, fiable). Si el
@@ -771,14 +773,22 @@ def _default_payload(
     # ── Aéreo ──
     val, exc = res["aerial"]
     if exc is not None:
-        notes.append("✈ Aéreo: OpenSky tardó en responder (limita la IP compartida del "
-                     "servidor); recarga en unos segundos.")
+        reason = f"{type(exc).__name__}: {str(exc)[:120]}"
+        if has_osky:
+            notes.append(f"✈ Aéreo: OpenSky falló CON credenciales — revisa "
+                         f"`OPENSKY_CLIENT_ID`/`OPENSKY_CLIENT_SECRET` en Secrets y haz Reboot. "
+                         f"Detalle: {reason}")
+        else:
+            notes.append("✈ Aéreo: OpenSky limita la IP compartida del servidor (sin "
+                         "credenciales). Añade tu cuenta gratuita y haz Reboot. "
+                         f"Detalle: {reason}")
     else:
         entries, meta = val
         payload["domains"]["aerial"] = entries
         scope = "en el mundo" if not bbox else "en el área"
+        auth = " · cuenta propia" if has_osky else " · anónimo"
         if military_only:
-            notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B — {meta['n_mil']} aeronaves "
+            notes.append(f"✈ Aéreo EN VIVO · OpenSky/ADS-B{auth} — {meta['n_mil']} aeronaves "
                          f"**militares** (heurística) de {meta['n_total']} {scope} (observed)")
             if not entries:
                 notes.append("Ahora mismo no hay vuelos militares detectables; desactiva *Solo "
