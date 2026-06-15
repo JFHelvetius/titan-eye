@@ -265,6 +265,29 @@
     scene.globe.depthTestAgainstTerrain = true;
     if (scene.globe.translucency) scene.globe.translucency.enabled = false;
 
+    // ── Calidad gráfica ─────────────────────────────────────────────────────
+    // Render a la resolución nativa del dispositivo (nítido en pantallas HiDPI),
+    // con tope ×2 para no castigar GPUs modestas.
+    try {
+      viewer.useBrowserRecommendedResolution = false;
+      viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 2);
+    } catch (e) {}
+    scene.msaaSamples = 4;                 // antialias (Cesium ≥1.87); ignorado si no
+    scene.postProcessStages.fxaa.enabled = true;
+    scene.highDynamicRange = true;
+    // Bloom sutil: los marcadores brillan ligeramente (estética de centro de mando)
+    // sin lavar el tema oscuro. Es un pase de pantalla, no depende del nº de objetos.
+    try {
+      const bloom = scene.postProcessStages.bloom;
+      bloom.enabled = true;
+      bloom.uniforms.glowOnly = false;
+      bloom.uniforms.contrast = 120;
+      bloom.uniforms.brightness = -0.35;
+      bloom.uniforms.delta = 1.2;
+      bloom.uniforms.sigma = 2.2;
+      bloom.uniforms.stepSize = 1.0;
+    } catch (e) {}
+
     const COL = {
       sat: Cesium.Color.fromCssColorString('#38bdf8'),
       aircraft: Cesium.Color.fromCssColorString('#f0b429'),
@@ -279,10 +302,13 @@
 
     // ── Iconos con FORMA (canvas → dataURL) para distinguir cada objeto ──────
     // Dibujados apuntando hacia ARRIBA (norte); el billboard se rota por rumbo.
+    // IS = supersampling: se dibujan a IS× resolución y el billboard se muestra a
+    // scale/IS → nítidos en pantallas HiDPI. (La escena se compone igual.)
+    const IS = 2;
     function sprite(kind, css) {
-      const c = document.createElement('canvas'); c.width = c.height = 40;
+      const c = document.createElement('canvas'); c.width = c.height = 40 * IS;
       const x = c.getContext('2d');
-      x.translate(20, 20); x.strokeStyle = 'rgba(0,0,0,.85)'; x.lineWidth = 1.5;
+      x.scale(IS, IS); x.translate(20, 20); x.strokeStyle = 'rgba(0,0,0,.85)'; x.lineWidth = 1.5;
       x.fillStyle = css;
       if (kind === 'plane') {
         x.beginPath();
@@ -336,8 +362,8 @@
       x.closePath();
     }
     function instSprite(kind) {
-      const c = document.createElement('canvas'); c.width = c.height = 36;
-      const x = c.getContext('2d'); x.translate(18, 18);
+      const c = document.createElement('canvas'); c.width = c.height = 36 * IS;
+      const x = c.getContext('2d'); x.scale(IS, IS); x.translate(18, 18);
       x.lineWidth = 2; x.lineJoin = 'round'; x.lineCap = 'round';
       const MIL = '#cfd8e3', INF = '#e3c66a';
       x.strokeStyle = 'rgba(0,0,0,.7)'; x.fillStyle = MIL;
@@ -408,8 +434,8 @@
 
     // ── Buques: FORMA según tipo. Verde = naval/militar; azul = mercante/servicio.
     function shipSprite(kind, css) {
-      const c = document.createElement('canvas'); c.width = c.height = 40;
-      const x = c.getContext('2d'); x.translate(20, 20);
+      const c = document.createElement('canvas'); c.width = c.height = 40 * IS;
+      const x = c.getContext('2d'); x.scale(IS, IS); x.translate(20, 20);
       x.strokeStyle = 'rgba(0,0,0,.85)'; x.lineWidth = 1.5; x.fillStyle = css;
       const hull = (w, top, bot) => {  // casco genérico, proa arriba
         x.beginPath();
@@ -559,7 +585,7 @@
       if (show('orbital')) (d.orbital || []).forEach(o => {
         const ent = viewer.entities.add({
           name: o.name, position: Cesium.Cartesian3.fromDegrees(o.lon, o.lat, (o.alt_km || 0) * 1000),
-          billboard: { image: satImage(o), scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER },
+          billboard: { image: satImage(o), scale: .8 / IS, verticalOrigin: Cesium.VerticalOrigin.CENTER },
           // Color del satélite = misión. Sin disableDepthTestDistance: globo opaco oculta el otro lado.
           label: { text: o.name, font: '11px Inter, sans-serif', fillColor: COL.sat, outlineColor: Cesium.Color.BLACK, outlineWidth: 2,
                    style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(10, 0), showBackground: true,
@@ -589,7 +615,7 @@
         const ent = viewer.entities.add({
           name: a.callsign || a.id, position: Cesium.Cartesian3.fromDegrees(a.lon, a.lat, (a.alt_km || 0) * 1000),
           billboard: { image: isMil ? SPRITE.planeMil : SPRITE.plane,
-                       scale: (isMil ? 0.95 : 0.5) * (stale ? 0.8 : 1),
+                       scale: (isMil ? 0.95 : 0.5) * (stale ? 0.8 : 1) / IS,
                        color: Cesium.Color.WHITE.withAlpha(stale ? .5 : (isMil ? 1 : .85)),
                        rotation: R(-(a.heading ?? 0)),
                        verticalOrigin: Cesium.VerticalOrigin.CENTER },
@@ -613,7 +639,7 @@
         const stale = (v.age_s ?? 0) > 600;
         const ent = viewer.entities.add({
           name: v.name || v.id, position: Cesium.Cartesian3.fromDegrees(v.lon, v.lat, 0),
-          billboard: { image: shipImage(v), scale: stale ? .55 : .72, color: Cesium.Color.WHITE.withAlpha(stale ? .55 : 1),
+          billboard: { image: shipImage(v), scale: (stale ? .55 : .72) / IS, color: Cesium.Color.WHITE.withAlpha(stale ? .55 : 1),
                        rotation: R(-(v.course ?? 0)),
                        verticalOrigin: Cesium.VerticalOrigin.CENTER },
           label: { text: v.name || '', font: '10px JetBrains Mono, monospace', fillColor: COL.naval,
@@ -667,7 +693,7 @@
         const apexAlt = s.apogee_km ? s.apogee_km * 1000 : 200000;
         const ent = viewer.entities.add({
           name: s.name, position: Cesium.Cartesian3.fromDegrees(apexLon, apexLat, apexAlt),
-          billboard: { image: SPRITE.missile, scale: .8, verticalOrigin: Cesium.VerticalOrigin.CENTER },
+          billboard: { image: SPRITE.missile, scale: .8 / IS, verticalOrigin: Cesium.VerticalOrigin.CENTER },
           description: `<h3>${s.name}</h3>` + epBadge('inferred') + htmlInfo([
             ['Dominio', 'Suborbital (balístico)'], ['Reporte de origen', s.source ?? '—'],
             ['Apogeo', (s.apogee_km ?? 0).toFixed(0) + ' km'], ['Alcance', (s.range_km ?? 0).toFixed(0) + ' km'],
@@ -712,7 +738,7 @@
       if (show('installations')) (payload.installations || []).forEach(it => {
         viewer.entities.add({
           name: it.name, position: Cesium.Cartesian3.fromDegrees(it.lon, it.lat, 0),
-          billboard: { image: instImage(it), scale: 0.62,
+          billboard: { image: instImage(it), scale: 0.62 / IS,
                        verticalOrigin: Cesium.VerticalOrigin.CENTER },
           description: `<h3>${it.name}</h3>` + epBadge('asserted') + htmlInfo([
             ['Capa', 'Referencia (instalación)'], ['Tipo', it.type ?? '—'],
