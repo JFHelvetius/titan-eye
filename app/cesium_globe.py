@@ -25,7 +25,7 @@ _PAGES_URL = os.environ.get(
 
 # Cache buster — incrementar al cambiar docs/cesium/index.html para invalidar
 # el CDN de GitHub Pages.
-_CACHE_BUSTER = "2026.06.14.4"
+_CACHE_BUSTER = "2026.06.14.5"
 
 
 def html(payload: dict[str, Any], *, height: int = 880) -> str:
